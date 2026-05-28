@@ -2,12 +2,6 @@
   "name": "taxi-moto",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "backend",
-    "apps/mobile-client",
-    "apps/mobile-driver",
-    "apps/admin"
-  ],
   "scripts": {
     "backend": "cd backend && npm run dev",
     "client": "cd apps/mobile-client && npx expo start",

@@ -1,158 +1,238 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  SafeAreaView, StatusBar, ScrollView, Dimensions,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { driverAPI } from '../../services/api';
-import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
+import { useEarningsStore } from '../../store';
+import { COLORS, RADIUS, SPACING } from '../../utils/theme';
 
-const PERIODS = [
-  { id: 'today', label: "Aujourd'hui" },
-  { id: 'week', label: 'Cette semaine' },
-  { id: 'month', label: 'Ce mois' },
+const { width } = Dimensions.get('window');
+
+const PERIODS = ['Aujourd\'hui', 'Cette semaine', 'Ce mois'];
+
+const MOCK_WEEK = [
+  { day: 'Lun', amount: 42, trips: 3 },
+  { day: 'Mar', amount: 68, trips: 5 },
+  { day: 'Mer', amount: 35, trips: 2 },
+  { day: 'Jeu', amount: 81, trips: 6 },
+  { day: 'Ven', amount: 95, trips: 7 },
+  { day: 'Sam', amount: 112, trips: 8 },
+  { day: 'Dim', amount: 54, trips: 4 },
 ];
 
-export default function EarningsScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
-  const [period, setPeriod] = useState('week');
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+const maxAmount = Math.max(...MOCK_WEEK.map((d) => d.amount));
 
-  const load = async () => {
-    try {
-      const res = await driverAPI.getEarnings(period);
-      setData(res.data);
-    } catch {} finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+export default function EarningsScreen() {
+  const [period, setPeriod] = useState(1); // default: this week
+  const { today, week, trips } = useEarningsStore();
 
-  useEffect(() => { setLoading(true); load(); }, [period]);
+  const totalWeek = MOCK_WEEK.reduce((s, d) => s + d.amount, 0);
+  const totalTrips = MOCK_WEEK.reduce((s, d) => s + d.trips, 0);
+  const todayData = MOCK_WEEK[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+
+  const displayTotal = period === 0 ? todayData.amount : period === 1 ? totalWeek : totalWeek * 4.3;
+  const displayTrips = period === 0 ? todayData.trips : period === 1 ? totalTrips : totalTrips * 4;
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.primary} />}
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>Mes revenus</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
-      {/* Période */}
-      <View style={styles.periodRow}>
-        {PERIODS.map((p) => (
-          <TouchableOpacity
-            key={p.id}
-            style={[styles.periodChip, period === p.id && styles.periodChipActive]}
-            onPress={() => setPeriod(p.id)}
-          >
-            <Text style={[styles.periodText, period === p.id && styles.periodTextActive]}>{p.label}</Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Mes revenus</Text>
+          <TouchableOpacity style={styles.calBtn}>
+            <Ionicons name="calendar-outline" size={20} color={COLORS.textSub} />
           </TouchableOpacity>
-        ))}
-      </View>
-
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 60 }} />
-      ) : data ? (
-        <>
-          {/* Carte principale */}
-          <View style={styles.mainCard}>
-            <Text style={styles.mainLabel}>Revenus nets</Text>
-            <Text style={styles.mainValue}>{data.netEarnings?.toLocaleString() || 0}</Text>
-            <Text style={styles.mainUnit}>FCFA</Text>
-          </View>
-
-          {/* Stats */}
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Ionicons name="bicycle" size={24} color={COLORS.primary} />
-              <Text style={styles.statValue}>{data.totalRides}</Text>
-              <Text style={styles.statLabel}>Courses</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="cash" size={24} color={COLORS.success} />
-              <Text style={styles.statValue}>{data.grossRevenue?.toLocaleString() || 0}</Text>
-              <Text style={styles.statLabel}>Brut (FCFA)</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="remove-circle" size={24} color={COLORS.error} />
-              <Text style={styles.statValue}>{((data.grossRevenue || 0) - (data.netEarnings || 0))?.toLocaleString()}</Text>
-              <Text style={styles.statLabel}>Commission</Text>
-            </View>
-          </View>
-
-          {/* Courses récentes */}
-          {data.rides?.length > 0 && (
-            <View style={styles.ridesSection}>
-              <Text style={styles.sectionTitle}>Courses récentes</Text>
-              {data.rides.slice(0, 10).map((r) => (
-                <View key={r.id} style={styles.rideItem}>
-                  <View style={styles.rideIcon}>
-                    <Ionicons name="bicycle" size={18} color={COLORS.primary} />
-                  </View>
-                  <View style={styles.rideInfo}>
-                    <Text style={styles.rideDate}>
-                      {r.completedAt ? format(new Date(r.completedAt), 'dd MMM · HH:mm', { locale: fr }) : '-'}
-                    </Text>
-                    <Text style={styles.rideDistance}>{parseFloat(r.distanceKm || 0).toFixed(1)} km</Text>
-                  </View>
-                  <Text style={styles.rideEarning}>
-                    +{Math.round((parseFloat(r.finalPrice) || 0) * 0.8)} FCFA
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </>
-      ) : (
-        <View style={styles.empty}>
-          <Ionicons name="wallet-outline" size={64} color={COLORS.gray[300]} />
-          <Text style={styles.emptyText}>Aucune donnée</Text>
         </View>
-      )}
-    </ScrollView>
+
+        {/* Period selector */}
+        <View style={styles.periodRow}>
+          {PERIODS.map((p, i) => (
+            <TouchableOpacity
+              key={p} style={[styles.periodBtn, period === i && styles.periodBtnActive]}
+              onPress={() => setPeriod(i)}
+            >
+              <Text style={[styles.periodText, period === i && styles.periodTextActive]}>{p}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Big total card */}
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Total gagné</Text>
+          <Text style={styles.totalAmount}>{displayTotal.toFixed(2)} €</Text>
+          <View style={styles.totalRow}>
+            <View style={styles.totalStat}>
+              <Ionicons name="bicycle-outline" size={16} color={COLORS.textSub} />
+              <Text style={styles.totalStatText}>{Math.round(displayTrips)} courses</Text>
+            </View>
+            <View style={styles.totalDivider} />
+            <View style={styles.totalStat}>
+              <Ionicons name="trending-up-outline" size={16} color={COLORS.primary} />
+              <Text style={[styles.totalStatText, { color: COLORS.primary }]}>+12% vs semaine dernière</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Weekly bar chart */}
+        {period >= 1 && (
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Revenus par jour</Text>
+            <View style={styles.bars}>
+              {MOCK_WEEK.map((d) => {
+                const pct = d.amount / maxAmount;
+                const isToday = d.day === ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][new Date().getDay()];
+                return (
+                  <View key={d.day} style={styles.barWrap}>
+                    <Text style={styles.barAmount}>{d.amount}€</Text>
+                    <View style={styles.barTrack}>
+                      <View
+                        style={[
+                          styles.barFill,
+                          { height: `${Math.round(pct * 100)}%` },
+                          isToday && styles.barFillToday,
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.barDay, isToday && { color: COLORS.primary }]}>{d.day}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Breakdown cards */}
+        <View style={styles.breakdownRow}>
+          <View style={styles.breakCard}>
+            <View style={[styles.breakIcon, { backgroundColor: 'rgba(46,204,113,0.15)' }]}>
+              <Ionicons name="cash-outline" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.breakValue}>{(displayTotal * 0.85).toFixed(2)} €</Text>
+            <Text style={styles.breakLabel}>Courses</Text>
+          </View>
+          <View style={styles.breakCard}>
+            <View style={[styles.breakIcon, { backgroundColor: 'rgba(243,156,18,0.15)' }]}>
+              <Ionicons name="gift-outline" size={22} color={COLORS.accent} />
+            </View>
+            <Text style={styles.breakValue}>{(displayTotal * 0.15).toFixed(2)} €</Text>
+            <Text style={styles.breakLabel}>Bonus</Text>
+          </View>
+          <View style={styles.breakCard}>
+            <View style={[styles.breakIcon, { backgroundColor: 'rgba(160,168,192,0.1)' }]}>
+              <Ionicons name="star-outline" size={22} color={COLORS.textSub} />
+            </View>
+            <Text style={styles.breakValue}>4.87</Text>
+            <Text style={styles.breakLabel}>Note moy.</Text>
+          </View>
+        </View>
+
+        {/* Recent earnings list */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Dernières courses</Text>
+        </View>
+
+        {MOCK_WEEK.map((d, i) => (
+          <View key={i} style={styles.earningItem}>
+            <View style={styles.earningLeft}>
+              <View style={styles.earningIcon}>
+                <Ionicons name="bicycle" size={18} color={COLORS.primary} />
+              </View>
+              <View>
+                <Text style={styles.earningDay}>{d.day} — {d.trips} course{d.trips > 1 ? 's' : ''}</Text>
+                <Text style={styles.earningTime}>Île-de-France</Text>
+              </View>
+            </View>
+            <Text style={styles.earningAmount}>+{d.amount} €</Text>
+          </View>
+        ))}
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: { padding: SPACING.md, backgroundColor: COLORS.white, ...SHADOWS.small },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.secondary },
-  periodRow: { flexDirection: 'row', padding: SPACING.md, gap: SPACING.sm },
-  periodChip: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderRadius: RADIUS.full, backgroundColor: COLORS.gray[200] },
-  periodChipActive: { backgroundColor: COLORS.primary },
-  periodText: { fontSize: SIZES.small, fontWeight: '600', color: COLORS.gray[600] },
-  periodTextActive: { color: COLORS.white },
-  mainCard: {
-    margin: SPACING.md, backgroundColor: COLORS.secondary, borderRadius: RADIUS.xl,
-    padding: SPACING.xl, alignItems: 'center', ...SHADOWS.medium,
+  container: { flex: 1, backgroundColor: COLORS.bg },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
   },
-  mainLabel: { color: 'rgba(255,255,255,0.6)', fontSize: SIZES.medium, marginBottom: SPACING.sm },
-  mainValue: { color: COLORS.white, fontSize: 48, fontWeight: '900' },
-  mainUnit: { color: 'rgba(255,255,255,0.7)', fontSize: SIZES.medium },
-  statsRow: { flexDirection: 'row', paddingHorizontal: SPACING.md, gap: SPACING.md, marginBottom: SPACING.md },
-  statCard: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.md,
-    alignItems: 'center', gap: 4, ...SHADOWS.small,
+  title: { fontSize: 28, fontWeight: '800', color: COLORS.text },
+  calBtn: {
+    width: 40, height: 40, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.bgCard, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  statValue: { fontSize: SIZES.xLarge, fontWeight: '800', color: COLORS.secondary },
-  statLabel: { fontSize: SIZES.small, color: COLORS.gray[500] },
-  ridesSection: { paddingHorizontal: SPACING.md },
-  sectionTitle: { fontSize: SIZES.small, fontWeight: '700', color: COLORS.gray[500], marginBottom: SPACING.sm, textTransform: 'uppercase', letterSpacing: 1 },
-  rideItem: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
-    borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm,
-    ...SHADOWS.small,
+
+  periodRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 20,
   },
-  rideIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary + '20', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.md },
-  rideInfo: { flex: 1 },
-  rideDate: { fontSize: SIZES.medium, fontWeight: '600', color: COLORS.secondary },
-  rideDistance: { fontSize: SIZES.small, color: COLORS.gray[500] },
-  rideEarning: { fontSize: SIZES.medium, fontWeight: '700', color: COLORS.success },
-  empty: { flex: 1, alignItems: 'center', paddingTop: 80, gap: SPACING.md },
-  emptyText: { color: COLORS.gray[500], fontSize: SIZES.large },
+  periodBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: RADIUS.full,
+    backgroundColor: COLORS.bgCard, alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  periodBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  periodText: { fontSize: 12, fontWeight: '700', color: COLORS.textSub },
+  periodTextActive: { color: COLORS.bg },
+
+  totalCard: {
+    marginHorizontal: 20, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl,
+    padding: 24, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border,
+  },
+  totalLabel: { fontSize: 13, color: COLORS.textSub, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  totalAmount: { fontSize: 48, fontWeight: '900', color: COLORS.primary, marginBottom: 16 },
+  totalRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  totalStat: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  totalStatText: { fontSize: 13, color: COLORS.textSub, fontWeight: '600' },
+  totalDivider: { width: 1, height: 16, backgroundColor: COLORS.border },
+
+  chartCard: {
+    marginHorizontal: 20, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl,
+    padding: 20, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border,
+  },
+  chartTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 20 },
+  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120 },
+  barWrap: { flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
+  barAmount: { fontSize: 9, color: COLORS.textMuted, marginBottom: 4 },
+  barTrack: {
+    width: '70%', height: 80, backgroundColor: COLORS.bgInput,
+    borderRadius: RADIUS.sm, overflow: 'hidden', justifyContent: 'flex-end',
+  },
+  barFill: { width: '100%', backgroundColor: COLORS.bgElevated, borderRadius: RADIUS.sm },
+  barFillToday: { backgroundColor: COLORS.primary },
+  barDay: { fontSize: 10, color: COLORS.textSub, marginTop: 6, fontWeight: '600' },
+
+  breakdownRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginBottom: 20 },
+  breakCard: {
+    flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg,
+    padding: 14, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: COLORS.border,
+  },
+  breakIcon: { width: 44, height: 44, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
+  breakValue: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  breakLabel: { fontSize: 11, color: COLORS.textSub, fontWeight: '600' },
+
+  sectionHeader: { paddingHorizontal: 20, marginBottom: 12 },
+  sectionTitle: {
+    fontSize: 13, fontWeight: '700', color: COLORS.textSub,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+
+  earningItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  earningLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  earningIcon: {
+    width: 40, height: 40, borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',
+  },
+  earningDay: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  earningTime: { fontSize: 12, color: COLORS.textSub, marginTop: 2 },
+  earningAmount: { fontSize: 16, fontWeight: '800', color: COLORS.primary },
 });

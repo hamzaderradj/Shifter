@@ -36,11 +36,11 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={{
         tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.gray[500],
+        tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
-          borderTopColor: COLORS.gray[200],
+          borderTopColor: '#E5E7EB',
           height: 60,
           paddingBottom: 8,
           paddingTop: 4,
@@ -97,7 +97,7 @@ export default function Navigation() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.secondary }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' }}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );

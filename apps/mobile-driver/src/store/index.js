@@ -1,55 +1,73 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
-import { authAPI } from '../services/api';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const useAuthStore = create((set) => ({
-  user: null,
-  driver: null,
-  isLoading: true,
-  isAuthenticated: false,
+// ── Auth Store ─────────────────────────────────────────────────
+const _authStore = create(
+  persist(
+    (set) => ({
+      user: null,
+      driver: null,
+      token: null,
+      refreshToken: null,
+      isAuthenticated: false,
+      isLoading: true,
 
-  init: async () => {
-    try {
-      const token = await SecureStore.getItemAsync('driver_access_token');
-      if (!token) return set({ isLoading: false });
-      const { data } = await authAPI.getMe();
-      set({ user: data.user, driver: data.user.driver, isAuthenticated: true });
-    } catch {
-      await SecureStore.deleteItemAsync('driver_access_token');
-    } finally {
-      set({ isLoading: false });
+      // Méthodes compatibles avec tous les écrans
+      setUser: (user) => set({ user }),
+      setDriver: (driver) => set({ driver, isAuthenticated: true }),
+      setToken: (token) => set({ token }),
+      updateDriver: (driver) => set({ driver }),
+      updateUser: (data) => set((state) => ({ user: { ...state.user, ...data } })),
+
+      login: ({ user, driver, token, refreshToken }) =>
+        set({ user, driver, token, refreshToken, isAuthenticated: true }),
+
+      logout: () =>
+        set({ user: null, driver: null, token: null, refreshToken: null, isAuthenticated: false }),
+
+      setLoading: (isLoading) => set({ isLoading }),
+      finishLoading: () => set({ isLoading: false }),
+    }),
+    {
+      name: 'driver-auth-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state) state.setLoading(false);
+      },
     }
-  },
+  )
+);
 
-  login: async (accessToken, refreshToken, user) => {
-    await SecureStore.setItemAsync('driver_access_token', accessToken);
-    await SecureStore.setItemAsync('driver_refresh_token', refreshToken);
-    set({ user, driver: user.driver, isAuthenticated: true });
-  },
+// Exporté sous 2 noms pour compatibilité avec tous les écrans
+export const useAuthStore = _authStore;
+export const useDriverAuthStore = _authStore;
 
-  logout: async () => {
-    await SecureStore.deleteItemAsync('driver_access_token');
-    await SecureStore.deleteItemAsync('driver_refresh_token');
-    set({ user: null, driver: null, isAuthenticated: false });
-  },
+// ── Status Store ───────────────────────────────────────────────
+export const useDriverStatusStore = create((set, get) => ({
+  isOnline: false,
+  currentRide: null,
+  rideRequest: null,
 
-  updateDriver: (driverData) => set((state) => ({ driver: { ...state.driver, ...driverData } })),
-  updateUser: (updates) => set((state) => ({ user: { ...state.user, ...updates } })),
+  setOnline: (online) => set({ isOnline: online }),
+  setCurrentRide: (ride) => set({ currentRide: ride }),
+  setRideRequest: (req) => set({ rideRequest: req }),
+  clearRide: () => set({ currentRide: null, rideRequest: null }),
 }));
 
-export const useRideStore = create((set) => ({
-  currentRide: null,
-  rideRequests: [],
-  isOnline: false,
+// ── Earnings Store ─────────────────────────────────────────────
+export const useEarningsStore = create((set) => ({
+  today: 0,
+  week: 0,
+  trips: 0,
+  history: [],
 
-  setCurrentRide: (ride) => set({ currentRide: ride }),
-  clearCurrentRide: () => set({ currentRide: null }),
-  setRideRequests: (requests) => set({ rideRequests: requests }),
-  addRideRequest: (ride) => set((state) => ({
-    rideRequests: [ride, ...state.rideRequests.filter(r => r.id !== ride.id)]
-  })),
-  removeRideRequest: (rideId) => set((state) => ({
-    rideRequests: state.rideRequests.filter(r => r.id !== rideId)
-  })),
-  setIsOnline: (online) => set({ isOnline: online }),
+  setEarnings: ({ today, week, trips }) => set({ today, week, trips }),
+  setHistory: (history) => set({ history }),
+  addTrip: (trip) =>
+    set((state) => ({
+      history: [trip, ...state.history],
+      today: state.today + parseFloat(trip.amount || 0),
+      trips: state.trips + 1,
+    })),
 }));

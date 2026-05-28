@@ -1,17 +1,22 @@
 {
   "expo": {
-    "name": "TaxaMoto",
+    "name": "Shifter",
     "slug": "taxa-moto-client",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
+    "image": "./assets/logo.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#ffffff",
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F1729"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.taxamoto.client",
@@ -32,7 +37,17 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "RECEIVE_SMS",
-        "READ_SMS"
+        "READ_SMS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "RECEIVE_SMS",
+        "READ_SMS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -44,7 +59,9 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#FF6B35",
-          "sounds": ["./assets/notification-sound.wav"]
+          "sounds": [
+            "./assets/notification-sound.wav"
+          ]
         }
       ],
       [
@@ -53,13 +70,22 @@
           "locationAlwaysAndWhenInUsePermission": "TaxaMoto utilise votre position pour vous connecter avec les chauffeurs.",
           "isIosBackgroundLocationEnabled": true
         }
-      ]
+      ],
+      "expo-font",
+      "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "http://localhost:3000",
+      "apiUrl": "https://shifter-bmbf.onrender.com",
       "eas": {
-        "projectId": "your-eas-project-id"
+        "projectId": "32e0c330-b991-461b-9ded-12ba346f91f2"
       }
+    },
+    "owner": "smy938",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/32e0c330-b991-461b-9ded-12ba346f91f2"
     }
   }
 }

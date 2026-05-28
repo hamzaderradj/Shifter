@@ -1,102 +1,113 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  SafeAreaView, StatusBar, Dimensions, Image
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, SIZES, RADIUS } from '../../utils/theme';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
-export default function WelcomeScreen({ navigation }) {
+export default function WelcomeScreen() {
+  const navigation = useNavigation();
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.secondary} />
-      <LinearGradient
-        colors={[COLORS.secondary, '#1A2744', COLORS.secondary]}
-        style={StyleSheet.absoluteFillObject}
-      />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#111827" />
 
-      {/* Logo & Branding */}
-      <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <Ionicons name="bicycle" size={60} color={COLORS.primary} />
-        </View>
-        <Text style={styles.appName}>TaxaMoto</Text>
-        <Text style={styles.tagline}>Votre moto-taxi en quelques secondes</Text>
-      </View>
-
-      {/* Features */}
-      <View style={styles.features}>
-        {[
-          { icon: 'flash', text: 'Rapide & fiable', sub: 'Chauffeur en moins de 5 min' },
-          { icon: 'shield-checkmark', text: 'Sécurisé', sub: 'Chauffeurs vérifiés' },
-          { icon: 'cash', text: 'Prix transparent', sub: 'Estimation avant la course' },
-        ].map((f, i) => (
-          <View key={i} style={styles.feature}>
-            <View style={styles.featureIcon}>
-              <Ionicons name={f.icon} size={22} color={COLORS.primary} />
-            </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>{f.text}</Text>
-              <Text style={styles.featureSub}>{f.sub}</Text>
-            </View>
+      <View style={styles.hero}>
+        <View style={styles.logoWrap}>
+          <View style={styles.logoCircle}>
+            <Ionicons name="bicycle" size={44} color="#3B82F6" />
           </View>
-        ))}
+        </View>
+        <Text style={styles.appName}>Shifter</Text>
+        <Text style={styles.tagline}>Your moto-taxi, instantly</Text>
+
+        <View style={styles.features}>
+          {[
+            { icon: 'flash', label: 'Fast' },
+            { icon: 'shield-checkmark', label: 'Safe' },
+            { icon: 'wallet', label: 'Affordable' },
+          ].map((f) => (
+            <View key={f.label} style={styles.feature}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={f.icon} size={22} color="#3B82F6" />
+              </View>
+              <Text style={styles.featureLabel}>{f.label}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
-      {/* CTA */}
-      <View style={styles.footer}>
+      <View style={styles.sheet}>
+        <Text style={styles.sheetTitle}>Get started</Text>
+        <Text style={styles.sheetSub}>Fast, reliable moto-taxi rides in your city</Text>
+
         <TouchableOpacity
           style={styles.primaryBtn}
           onPress={() => navigation.navigate('Phone')}
           activeOpacity={0.85}
         >
-          <Text style={styles.primaryBtnText}>Commencer</Text>
-          <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
+          <Text style={styles.primaryBtnText}>Continue with phone</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.socialBtn}>
+          <Ionicons name="logo-apple" size={20} color="#111827" />
+          <Text style={styles.socialBtnText}>Continue with Apple</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.socialBtn}>
+          <Text style={styles.googleG}>G</Text>
+          <Text style={styles.socialBtnText}>Continue with Google</Text>
         </TouchableOpacity>
 
         <Text style={styles.terms}>
-          En continuant, vous acceptez nos{' '}
-          <Text style={styles.termsLink}>Conditions d'utilisation</Text>
-          {' '}et notre{' '}
-          <Text style={styles.termsLink}>Politique de confidentialité</Text>
+          By continuing, you agree to our{' '}
+          <Text style={styles.link}>Terms</Text> and{' '}
+          <Text style={styles.link}>Privacy Policy</Text>
         </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.secondary },
-  header: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
-  logoContainer: {
-    width: 120, height: 120, borderRadius: 60,
-    backgroundColor: 'rgba(255,107,53,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: SPACING.md,
-    borderWidth: 2, borderColor: 'rgba(255,107,53,0.3)',
+  container: { flex: 1, backgroundColor: '#111827' },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  logoWrap: { marginBottom: 20 },
+  logoCircle: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#3B82F6',
   },
-  appName: {
-    fontSize: 42, fontWeight: '800', color: COLORS.white,
-    letterSpacing: -1, marginBottom: 8,
-  },
-  tagline: { fontSize: 16, color: COLORS.gray[400], textAlign: 'center' },
-  features: { paddingHorizontal: SPACING.xl, gap: SPACING.md },
-  feature: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  appName: { fontSize: 44, fontWeight: '900', color: '#fff', letterSpacing: -1, marginBottom: 8 },
+  tagline: { fontSize: 16, color: '#94A3B8', marginBottom: 48 },
+  features: { flexDirection: 'row', gap: 28 },
+  feature: { alignItems: 'center', gap: 8 },
   featureIcon: {
-    width: 48, height: 48, borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(255,107,53,0.1)',
-    alignItems: 'center', justifyContent: 'center',
+    width: 52, height: 52, borderRadius: 16,
+    backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center',
   },
-  featureText: { flex: 1 },
-  featureTitle: { color: COLORS.white, fontSize: SIZES.large, fontWeight: '600' },
-  featureSub: { color: COLORS.gray[400], fontSize: SIZES.small, marginTop: 2 },
-  footer: { padding: SPACING.xl, gap: SPACING.md },
+  featureLabel: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
+  sheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32,
+    paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40,
+  },
+  sheetTitle: { fontSize: 26, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  sheetSub: { fontSize: 15, color: '#6B7280', marginBottom: 28, lineHeight: 22 },
   primaryBtn: {
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.lg,
-    height: 56, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: SPACING.sm,
+    backgroundColor: '#3B82F6', borderRadius: 14,
+    paddingVertical: 17, alignItems: 'center', marginBottom: 12,
   },
-  primaryBtnText: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
-  terms: { textAlign: 'center', color: COLORS.gray[500], fontSize: 12, lineHeight: 18 },
-  termsLink: { color: COLORS.primary, fontWeight: '600' },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  socialBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14,
+    paddingVertical: 15, marginBottom: 12,
+  },
+  socialBtnText: { fontSize: 15, fontWeight: '600', color: '#111827' },
+  googleG: { fontSize: 18, fontWeight: '900', color: '#4285F4' },
+  terms: { textAlign: 'center', fontSize: 12, color: '#9CA3AF', lineHeight: 18, marginTop: 8 },
+  link: { color: '#3B82F6', fontWeight: '600' },
 });

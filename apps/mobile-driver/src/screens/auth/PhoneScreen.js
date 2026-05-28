@@ -1,61 +1,162 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import {
+  View, Text, TouchableOpacity, StyleSheet, TextInput,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { authAPI } from '../../services/api';
-import { COLORS, SPACING, SIZES, RADIUS } from '../../utils/theme';
+import { useNavigation } from '@react-navigation/native';
+import { COLORS, RADIUS } from '../../utils/theme';
 
-const COUNTRY_CODE = '+221';
+const API_URL = 'https://shifter-bmbf.onrender.com';
 
-export default function PhoneScreen({ navigation }) {
+export default function DriverPhoneScreen() {
+  const navigation = useNavigation();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const fullPhone = `${COUNTRY_CODE}${phone.replace(/\s/g, '')}`;
+  const [error, setError] = useState('');
 
-  const handleSend = async () => {
-    if (phone.replace(/\s/g, '').length < 7) return Alert.alert('Numéro invalide', 'Saisissez un numéro valide.');
-    setLoading(true);
-    try {
-      await authAPI.sendOtp(fullPhone);
-      navigation.navigate('OTP', { phone: fullPhone });
-    } catch (err) {
-      Alert.alert('Erreur', err.response?.data?.message || 'Impossible d\'envoyer le code.');
-    } finally { setLoading(false); }
+  const formatPhone = (text) => {
+    const clean = text.replace(/\D/g, '').slice(0, 10);
+    const parts = clean.match(/.{1,2}/g) || [];
+    setPhone(parts.join(' '));
+    setError('');
   };
 
+  const handleSend = async () => {
+    const raw = phone.replace(/\s/g, '');
+    if (raw.length < 9) return;
+    setLoading(true);
+    try {
+      const fullPhone = '+33' + raw;
+      await fetch(`${API_URL}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fullPhone, role: 'driver' }),
+      });
+      navigation.navigate('OTP', { phone: fullPhone });
+    } catch {
+      setError("Erreur réseau. Vérifie ta connexion.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isValid = phone.replace(/\s/g, '').length >= 9;
+
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
-      </TouchableOpacity>
-      <View style={styles.content}>
-        <Text style={styles.title}>Votre numéro</Text>
-        <Text style={styles.subtitle}>Nous enverrons un code de vérification par SMS.</Text>
-        <View style={styles.inputRow}>
-          <View style={styles.flag}><Text style={styles.flagCode}>{COUNTRY_CODE}</Text></View>
-          <TextInput style={styles.input} placeholder="77 000 00 00" placeholderTextColor={COLORS.gray[400]} keyboardType="phone-pad" value={phone} onChangeText={setPhone} maxLength={12} autoFocus />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.inner}>
+
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
+            <Ionicons name="arrow-back" size={22} color={COLORS.text} />
+          </TouchableOpacity>
         </View>
-        <Text style={styles.hint}>En développement, code: <Text style={styles.hintBold}>123456</Text></Text>
-        <TouchableOpacity style={[styles.btn, (!phone || loading) && styles.btnDisabled]} onPress={handleSend} disabled={!phone || loading}>
-          {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.btnText}>Recevoir le code →</Text>}
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        <View style={styles.content}>
+          <View style={styles.iconWrap}>
+            <Ionicons name="phone-portrait-outline" size={30} color={COLORS.primary} />
+          </View>
+          <Text style={styles.title}>Ton numéro{'\n'}de téléphone</Text>
+          <Text style={styles.subtitle}>On t'envoie un code pour confirmer ton identité</Text>
+
+          <View style={styles.inputRow}>
+            <View style={styles.countryBox}>
+              <Text style={styles.flag}>🇫🇷</Text>
+              <Text style={styles.code}>+33</Text>
+            </View>
+            <TextInput
+              style={[styles.phoneInput, error ? styles.phoneInputError : null]}
+              value={phone}
+              onChangeText={formatPhone}
+              keyboardType="phone-pad"
+              placeholder="6 00 00 00 00"
+              placeholderTextColor={COLORS.textMuted}
+              autoFocus
+            />
+          </View>
+
+          {error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.btn, !isValid && styles.btnDisabled]}
+            onPress={handleSend}
+            disabled={loading || !isValid}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.bg} />
+            ) : (
+              <>
+                <Text style={styles.btnText}>Recevoir le code</Text>
+                <Ionicons name="arrow-forward" size={18} color={COLORS.bg} />
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.terms}>
+          En continuant, tu acceptes nos{' '}
+          <Text style={styles.link}>Conditions d'utilisation</Text>
+          {' '}et notre{' '}
+          <Text style={styles.link}>Politique de confidentialité</Text>.
+        </Text>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  back: { padding: SPACING.md, marginTop: 40 },
-  content: { flex: 1, paddingHorizontal: SPACING.xl, paddingTop: SPACING.lg },
-  title: { fontSize: 28, fontWeight: '800', color: COLORS.secondary, marginBottom: 8 },
-  subtitle: { fontSize: SIZES.medium, color: COLORS.gray[600], lineHeight: 22, marginBottom: SPACING.xl },
-  inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: COLORS.gray[200], borderRadius: RADIUS.md, marginBottom: SPACING.sm, overflow: 'hidden' },
-  flag: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.md, backgroundColor: COLORS.gray[100], borderRightWidth: 1, borderRightColor: COLORS.gray[200] },
-  flagCode: { fontSize: SIZES.large, fontWeight: '700', color: COLORS.secondary },
-  input: { flex: 1, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md, fontSize: 18, color: COLORS.secondary, letterSpacing: 2 },
-  hint: { fontSize: 13, color: COLORS.gray[500], marginBottom: SPACING.xl },
-  hintBold: { fontWeight: '700', color: COLORS.primary },
-  btn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.lg, height: 56, alignItems: 'center', justifyContent: 'center' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  inner: { flex: 1 },
+  header: { paddingHorizontal: 20, paddingTop: 12 },
+  back: {
+    width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 32 },
+  iconWrap: {
+    width: 60, height: 60, borderRadius: RADIUS.lg,
+    backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 20, borderWidth: 1, borderColor: 'rgba(46,204,113,0.25)',
+  },
+  title: { fontSize: 30, fontWeight: '800', color: COLORS.text, lineHeight: 38, marginBottom: 10 },
+  subtitle: { fontSize: 14, color: COLORS.textSub, marginBottom: 32, lineHeight: 20 },
+
+  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  countryBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
+    paddingHorizontal: 14, paddingVertical: 15,
+    borderWidth: 1.5, borderColor: COLORS.border,
+  },
+  flag: { fontSize: 18 },
+  code: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  phoneInput: {
+    flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
+    paddingHorizontal: 16, paddingVertical: 15, fontSize: 16, color: COLORS.text,
+    borderWidth: 1.5, borderColor: COLORS.border,
+  },
+  phoneInputError: { borderColor: COLORS.danger },
+  errorText: { fontSize: 13, color: COLORS.danger, marginBottom: 12 },
+
+  btn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, paddingVertical: 17,
+    marginTop: 16,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 16, elevation: 10,
+  },
+  btnDisabled: { backgroundColor: 'rgba(46,204,113,0.3)', shadowOpacity: 0 },
+  btnText: { color: COLORS.bg, fontSize: 16, fontWeight: '800' },
+
+  terms: {
+    textAlign: 'center', fontSize: 11, color: COLORS.textMuted,
+    paddingHorizontal: 24, paddingBottom: 24, lineHeight: 17,
+  },
+  link: { color: COLORS.textSub, fontWeight: '600' },
 });

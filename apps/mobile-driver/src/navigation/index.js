@@ -5,67 +5,126 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useAuthStore } from '../store';
-import { COLORS } from '../utils/theme';
+import { useDriverAuthStore } from '../store';
 
-// Auth
-import WelcomeScreen from '../screens/auth/WelcomeScreen';
-import PhoneScreen from '../screens/auth/PhoneScreen';
-import OTPScreen from '../screens/auth/OTPScreen';
+// Auth screens
+import DriverWelcomeScreen from '../screens/auth/WelcomeScreen';
+import DriverPhoneScreen from '../screens/auth/PhoneScreen';
+import DriverOTPScreen from '../screens/auth/OTPScreen';
 
-// App
-import HomeScreen from '../screens/home/HomeScreen';
-import ActiveRideScreen from '../screens/ride/ActiveRideScreen';
+// App screens
+import DriverHomeScreen from '../screens/home/HomeScreen';
 import EarningsScreen from '../screens/earnings/EarningsScreen';
-import ProfileScreen from '../screens/profile/ProfileScreen';
-import RegistrationScreen from '../screens/profile/RegistrationScreen';
-import HistoryScreen from '../screens/history/HistoryScreen';
+import TripsScreen from '../screens/trips/TripsScreen';
+import HelpScreen from '../screens/help/HelpScreen';
+import DriverProfileScreen from '../screens/profile/ProfileScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+const DARK = {
+  bg: '#0F0F1A',
+  card: '#1A1A2E',
+  border: '#252545',
+  primary: '#2ECC71',
+  inactive: '#555E7A',
+  text: '#FFFFFF',
+};
+
 function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.gray[500],
-        tabBarStyle: { backgroundColor: COLORS.white, height: 60, paddingBottom: 8 },
+      screenOptions={({ route }) => ({
         headerShown: false,
-      }}
+        tabBarStyle: {
+          backgroundColor: DARK.card,
+          borderTopWidth: 1,
+          borderTopColor: DARK.border,
+          height: 64,
+          paddingBottom: 10,
+          paddingTop: 6,
+        },
+        tabBarActiveTintColor: DARK.primary,
+        tabBarInactiveTintColor: DARK.inactive,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
+      })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Accueil', tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} /> }} />
-      <Tab.Screen name="History" component={HistoryScreen} options={{ title: 'Courses', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} /> }} />
-      <Tab.Screen name="Earnings" component={EarningsScreen} options={{ title: 'Revenus', tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" color={color} size={size} /> }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profil', tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }} />
+      <Tab.Screen
+        name="Home"
+        component={DriverHomeScreen}
+        options={{
+          title: 'Accueil',
+          tabBarIcon: ({ color, size }) => <Ionicons name="navigate" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Earnings"
+        component={EarningsScreen}
+        options={{
+          title: 'Revenus',
+          tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Trips"
+        component={TripsScreen}
+        options={{
+          title: 'Courses',
+          tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Help"
+        component={HelpScreen}
+        options={{
+          title: 'Aide',
+          tabBarIcon: ({ color, size }) => <Ionicons name="help-circle-outline" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={DriverProfileScreen}
+        options={{
+          title: 'Profil',
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" color={color} size={size} />,
+        }}
+      />
     </Tab.Navigator>
   );
 }
 
-export default function Navigation() {
-  const { isAuthenticated, isLoading } = useAuthStore();
-
-  if (isLoading) return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.secondary }}>
-      <ActivityIndicator size="large" color={COLORS.primary} />
-    </View>
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Welcome" component={DriverWelcomeScreen} />
+      <Stack.Screen name="Phone" component={DriverPhoneScreen} />
+      <Stack.Screen name="OTP" component={DriverOTPScreen} />
+    </Stack.Navigator>
   );
+}
+
+function AppStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MainTabs" component={MainTabs} />
+    </Stack.Navigator>
+  );
+}
+
+export default function DriverNavigation() {
+  const { isAuthenticated, isLoading } = useDriverAuthStore();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: DARK.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={DARK.primary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
-      {isAuthenticated ? (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="MainTabs" component={MainTabs} />
-          <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />
-          <Stack.Screen name="Registration" component={RegistrationScreen} />
-        </Stack.Navigator>
-      ) : (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Welcome" component={WelcomeScreen} />
-          <Stack.Screen name="Phone" component={PhoneScreen} />
-          <Stack.Screen name="OTP" component={OTPScreen} />
-        </Stack.Navigator>
-      )}
+      {isAuthenticated ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 }

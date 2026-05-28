@@ -1,67 +1,197 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  SafeAreaView, StatusBar, ScrollView, Alert,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore } from '../../store';
-import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
+import { useDriverAuthStore, useEarningsStore } from '../../store';
+import { COLORS, RADIUS } from '../../utils/theme';
 
-export default function ProfileScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
-  const { user, driver, logout } = useAuthStore();
-  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Chauffeur';
-  const statusColor = { pending: COLORS.warning, approved: COLORS.success, rejected: COLORS.error, suspended: COLORS.error }[driver?.status] || COLORS.gray[500];
-  const statusLabel = { pending: 'En attente', approved: 'Approuvé', rejected: 'Rejeté', suspended: 'Suspendu' }[driver?.status] || driver?.status;
+const MenuItem = ({ icon, label, subtitle, onPress, danger, value, badge }) => (
+  <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
+    <View style={[styles.menuIcon, danger && styles.menuIconDanger]}>
+      <Ionicons name={icon} size={20} color={danger ? COLORS.danger : COLORS.textSub} />
+    </View>
+    <View style={styles.menuText}>
+      <Text style={[styles.menuLabel, danger && { color: COLORS.danger }]}>{label}</Text>
+      {subtitle ? <Text style={styles.menuSub}>{subtitle}</Text> : null}
+    </View>
+    {value ? <Text style={styles.menuValue}>{value}</Text> : null}
+    {badge ? (
+      <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View>
+    ) : null}
+    {!danger && <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />}
+  </TouchableOpacity>
+);
+
+export default function DriverProfileScreen() {
+  const { driver, logout } = useDriverAuthStore();
+  const { today, trips } = useEarningsStore();
+
+  const handleLogout = () => {
+    Alert.alert('Déconnexion', 'Tu veux vraiment te déconnecter ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Déconnecter', style: 'destructive', onPress: logout },
+    ]);
+  };
+
+  const soon = (f) => Alert.alert(f, 'Disponible dans la prochaine version.', [{ text: 'OK' }]);
+
+  const firstName = driver?.firstName || 'Chauffeur';
+  const lastName = driver?.lastName || '';
+  const name = `${firstName} ${lastName}`.trim();
+  const initial = name[0]?.toUpperCase() || 'C';
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{fullName[0]?.toUpperCase()}</Text></View>
-        <Text style={styles.name}>{fullName}</Text>
-        <Text style={styles.phone}>{user?.phone}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
-      {driver && (
-        <View style={styles.vehicleCard}>
-          <Ionicons name="bicycle" size={24} color={COLORS.primary} />
-          <View>
-            <Text style={styles.vehicleName}>{driver.vehicleColor} {driver.vehicleMake} {driver.vehicleModel}</Text>
-            <Text style={styles.vehiclePlate}>{driver.vehiclePlate}</Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Mon profil</Text>
+        </View>
+
+        {/* Profile card */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarWrap}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+            <View style={styles.onlineBadge} />
+          </View>
+
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{name}</Text>
+            <Text style={styles.profilePhone}>{driver?.phone || '+33 6 XX XX XX XX'}</Text>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={14} color={COLORS.accent} />
+              <Text style={styles.ratingText}>4.87</Text>
+              <Text style={styles.ratingCount}>({trips} courses)</Text>
+            </View>
           </View>
         </View>
-      )}
 
-      {!driver && (
-        <TouchableOpacity style={styles.registerBtn} onPress={() => navigation.navigate('Registration')}>
-          <Ionicons name="add-circle" size={22} color={COLORS.white} />
-          <Text style={styles.registerBtnText}>S'inscrire comme chauffeur</Text>
-        </TouchableOpacity>
-      )}
+        {/* Stats band */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{today.toFixed(0)} €</Text>
+            <Text style={styles.statLabel}>Aujourd'hui</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{trips}</Text>
+            <Text style={styles.statLabel}>Courses</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: COLORS.primary }]}>Actif</Text>
+            <Text style={styles.statLabel}>Statut</Text>
+          </View>
+        </View>
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={() => Alert.alert('Déconnexion', 'Se déconnecter ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Déconnexion', style: 'destructive', onPress: logout }])}>
-        <Ionicons name="log-out-outline" size={20} color={COLORS.error} />
-        <Text style={styles.logoutText}>Se déconnecter</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Documents section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Compte</Text>
+          <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Nom, photo" onPress={() => soon('Modifier le profil')} />
+          <MenuItem icon="document-text-outline" label="Documents" subtitle="Permis, assurance, carte grise" onPress={() => soon('Documents')} badge="✓" />
+          <MenuItem icon="card-outline" label="Paiement" subtitle="Virement bancaire" onPress={() => soon('Paiement')} />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Activité</Text>
+          <MenuItem icon="cash-outline" label="Revenus" value="487 €" onPress={() => soon('Revenus')} />
+          <MenuItem icon="gift-outline" label="Bonus" subtitle="Objectifs et récompenses" onPress={() => soon('Bonus')} badge="3" />
+          <MenuItem icon="star-outline" label="Évaluations" subtitle="Tes notes clients" onPress={() => soon('Évaluations')} />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Préférences</Text>
+          <MenuItem icon="notifications-outline" label="Notifications" onPress={() => soon('Notifications')} />
+          <MenuItem icon="language-outline" label="Langue" value="Français" onPress={() => soon('Langue')} />
+          <MenuItem icon="shield-outline" label="Sécurité" onPress={() => soon('Sécurité')} />
+        </View>
+
+        <View style={styles.section}>
+          <MenuItem icon="log-out-outline" label="Se déconnecter" onPress={handleLogout} danger />
+        </View>
+
+        <Text style={styles.version}>Shifter Rider v1.0.0</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: { backgroundColor: COLORS.secondary, padding: SPACING.xl, alignItems: 'center', gap: SPACING.sm },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: COLORS.white, fontSize: 32, fontWeight: '800' },
-  name: { fontSize: SIZES.xxLarge, fontWeight: '800', color: COLORS.white },
-  phone: { color: 'rgba(255,255,255,0.7)', fontSize: SIZES.medium },
-  statusBadge: { paddingHorizontal: SPACING.md, paddingVertical: 4, borderRadius: RADIUS.full },
-  statusText: { fontWeight: '700', fontSize: SIZES.small },
-  vehicleCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, backgroundColor: COLORS.white, margin: SPACING.md, borderRadius: RADIUS.lg, padding: SPACING.md, ...SHADOWS.small },
-  vehicleName: { fontSize: SIZES.medium, fontWeight: '700', color: COLORS.secondary },
-  vehiclePlate: { color: COLORS.gray[500], fontSize: SIZES.small },
-  registerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, backgroundColor: COLORS.primary, margin: SPACING.md, borderRadius: RADIUS.lg, height: 52 },
-  registerBtnText: { color: COLORS.white, fontWeight: '700', fontSize: SIZES.large },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, margin: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.error },
-  logoutText: { color: COLORS.error, fontWeight: '600' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+
+  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+  title: { fontSize: 28, fontWeight: '800', color: COLORS.text },
+
+  profileCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    backgroundColor: COLORS.bgCard, paddingHorizontal: 20, paddingVertical: 20,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(46,204,113,0.4)',
+  },
+  avatarText: { fontSize: 28, fontWeight: '900', color: COLORS.bg },
+  onlineBadge: {
+    position: 'absolute', bottom: 2, right: 2,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.bgCard,
+  },
+
+  profileInfo: { flex: 1 },
+  profileName: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginBottom: 3 },
+  profilePhone: { fontSize: 13, color: COLORS.textSub, marginBottom: 6 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  ratingText: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  ratingCount: { fontSize: 12, color: COLORS.textMuted },
+
+  statsRow: {
+    flexDirection: 'row', backgroundColor: COLORS.bgCard,
+    paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    marginBottom: 12,
+  },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginBottom: 3 },
+  statLabel: { fontSize: 11, color: COLORS.textSub, fontWeight: '600' },
+  statDivider: { width: 1, backgroundColor: COLORS.border },
+
+  section: {
+    backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg,
+    marginHorizontal: 16, marginTop: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: '700', color: COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 1,
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  menuIcon: {
+    width: 38, height: 38, borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.bgInput, alignItems: 'center', justifyContent: 'center',
+  },
+  menuIconDanger: { backgroundColor: 'rgba(231,76,60,0.1)' },
+  menuText: { flex: 1 },
+  menuLabel: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  menuSub: { fontSize: 12, color: COLORS.textSub, marginTop: 1 },
+  menuValue: { fontSize: 13, fontWeight: '600', color: COLORS.textSub, marginRight: 6 },
+  badge: {
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.full,
+    paddingHorizontal: 8, paddingVertical: 2, marginRight: 6,
+  },
+  badgeText: { color: COLORS.bg, fontSize: 11, fontWeight: '800' },
+
+  version: { textAlign: 'center', fontSize: 12, color: COLORS.textMuted, paddingVertical: 24 },
 });

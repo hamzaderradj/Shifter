@@ -2,29 +2,35 @@ const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const multer = require('multer');
-const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
+const config = require('../config');
 const { authenticate, requireRole, requireDriver } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
-// Multer pour l'upload de documents
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/documents/'),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${req.user.id}_${file.fieldname}_${Date.now()}${ext}`);
+// Supabase Storage client (service role pour bypass RLS)
+const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey);
+const BUCKET = 'driver-documents';
+
+// Multer : mémoire (pas de disque — Render est éphémère)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    cb(null, allowed.includes(file.mimetype));
   }
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.pdf'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, allowed.includes(ext));
-  }
-});
+// Helper : upload buffer → Supabase Storage → URL publique
+async function uploadToSupabase(buffer, mimetype, filename) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .upload(filename, buffer, { contentType: mimetype, upsert: true });
+  if (error) throw new Error(`Supabase upload failed: ${error.message}`);
+  const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
+  return publicUrl;
+}
 
 // ── POST /drivers/register ────────────────────────────────────
 router.post('/register', authenticate,
@@ -78,11 +84,17 @@ router.post('/documents',
   async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'Fichier requis' });
 
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
     try {
       const driver = await prisma.driver.findUnique({ where: { userId: req.user.id } });
       if (!driver) return res.status(404).json({ success: false, message: 'Profil chauffeur introuvable' });
 
-      const fileUrl = `/uploads/documents/${req.file.filename}`;
+      // Upload vers Supabase Storage (persistant)
+      const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
+      const filename = `${driver.id}/${req.body.type}_${Date.now()}${ext}`;
+      const fileUrl = await uploadToSupabase(req.file.buffer, req.file.mimetype, filename);
 
       const doc = await prisma.driverDocument.upsert({
         where: { driverId_type: { driverId: driver.id, type: req.body.type } },
@@ -92,8 +104,8 @@ router.post('/documents',
 
       res.json({ success: true, document: doc });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ success: false, message: 'Erreur upload' });
+      console.error('[UPLOAD DOC]', err);
+      res.status(500).json({ success: false, message: 'Erreur upload document' });
     }
   }
 );

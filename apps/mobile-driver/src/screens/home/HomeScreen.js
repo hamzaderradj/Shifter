@@ -1,399 +1,367 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Switch, Alert,
-  StatusBar, Modal, Vibration
+  View, Text, TouchableOpacity, StyleSheet,
+  StatusBar, Dimensions, Animated, Alert,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_DEFAULT, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { io } from 'socket.io-client';
-import * as SecureStore from 'expo-secure-store';
-import Constants from 'expo-constants';
+import * as Location from 'expo-location';
+import { useDriverAuthStore, useDriverStatusStore, useEarningsStore } from '../../store';
+import { COLORS, RADIUS, SHADOW } from '../../utils/theme';
 
-import { useAuthStore, useRideStore } from '../../store';
-import { driverAPI, ridesAPI } from '../../services/api';
-import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
+const { height, width } = Dimensions.get('window');
+const PARIS = { latitude: 48.8566, longitude: 2.3522 };
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3000';
-
-const RideRequestModal = ({ ride, visible, onAccept, onDecline, loading }) => {
-  if (!ride) return null;
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.rideModal}>
-          <View style={styles.modalHeader}>
-            <View style={styles.pulse}>
-              <Ionicons name="bicycle" size={28} color={COLORS.primary} />
-            </View>
-            <Text style={styles.modalTitle}>Nouvelle course !</Text>
-            <Text style={styles.modalSub}>
-              {ride.client?.firstName} {ride.client?.lastName}
-            </Text>
-          </View>
-
-          <View style={styles.modalRoute}>
-            <View style={styles.routeItem}>
-              <View style={[styles.routeDot, { backgroundColor: COLORS.success }]} />
-              <Text style={styles.routeText} numberOfLines={2}>{ride.pickupAddress}</Text>
-            </View>
-            <View style={styles.routeConnector} />
-            <View style={styles.routeItem}>
-              <View style={[styles.routeDot, { backgroundColor: COLORS.error }]} />
-              <Text style={styles.routeText} numberOfLines={2}>{ride.dropoffAddress}</Text>
-            </View>
-          </View>
-
-          <View style={styles.modalStats}>
-            <View style={styles.modalStat}>
-              <Text style={styles.modalStatValue}>{ride.distanceKm} km</Text>
-              <Text style={styles.modalStatLabel}>Distance</Text>
-            </View>
-            <View style={styles.modalStat}>
-              <Text style={styles.modalStatValue}>{ride.durationMinutes} min</Text>
-              <Text style={styles.modalStatLabel}>Durée</Text>
-            </View>
-            <View style={styles.modalStat}>
-              <Text style={[styles.modalStatValue, { color: COLORS.success }]}>{ride.estimatedPrice} FCFA</Text>
-              <Text style={styles.modalStatLabel}>Prix</Text>
-            </View>
-          </View>
-
-          <View style={styles.modalActions}>
-            <TouchableOpacity style={styles.declineBtn} onPress={onDecline} disabled={loading}>
-              <Ionicons name="close" size={24} color={COLORS.error} />
-              <Text style={styles.declineBtnText}>Refuser</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.acceptBtn} onPress={onAccept} disabled={loading}>
-              <Ionicons name="checkmark" size={24} color={COLORS.white} />
-              <Text style={styles.acceptBtnText}>Accepter</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-export default function HomeScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
+export default function DriverHomeScreen() {
   const mapRef = useRef(null);
-  const socketRef = useRef(null);
-  const locationWatchRef = useRef(null);
-  const { user, driver, updateDriver } = useAuthStore();
-  const { isOnline, setIsOnline, currentRide, setCurrentRide, addRideRequest, rideRequests, removeRideRequest } = useRideStore();
-  const [userLocation, setUserLocation] = useState(null);
-  const [pendingRide, setPendingRide] = useState(null);
-  const [showRideModal, setShowRideModal] = useState(false);
-  const [acceptLoading, setAcceptLoading] = useState(false);
-  const [todayStats, setTodayStats] = useState({ rides: 0, earnings: 0 });
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // Charger stats
+  const { driver } = useDriverAuthStore();
+  const { isOnline, setOnline, rideRequest, setRideRequest } = useDriverStatusStore();
+  const { today, trips } = useEarningsStore();
+
+  const [location, setLocation] = useState(null);
+  const [locError, setLocError] = useState(false);
+  const [toggling, setToggling] = useState(false);
+
+  // Pulse animation when online
   useEffect(() => {
-    driverAPI.getEarnings('today').then(({ data }) => {
-      setTodayStats({ rides: data.totalRides, earnings: data.netEarnings });
-    }).catch(() => {});
-  }, []);
+    if (isOnline) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [isOnline]);
 
-  // Géolocalisation
+  // Slide-in ride request banner
+  useEffect(() => {
+    if (rideRequest) {
+      Animated.spring(slideAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }).start();
+    } else {
+      Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }
+  }, [rideRequest]);
+
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-      setUserLocation(pos);
-      mapRef.current?.animateToRegion({
-        latitude: pos.lat, longitude: pos.lng,
-        latitudeDelta: 0.01, longitudeDelta: 0.01
-      }, 1000);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') { setLocError(true); return; }
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      } catch {
+        setLocError(true);
+      }
     })();
   }, []);
 
-  // Socket
-  useEffect(() => {
-    const connectSocket = async () => {
-      const token = await SecureStore.getItemAsync('driver_access_token');
-      if (!token) return;
-
-      const socket = io(API_URL, {
-        auth: { token },
-        transports: ['websocket'],
-        reconnection: true,
-      });
-
-      socket.on('connect', () => console.log('[Driver Socket] Connected'));
-
-      // Nouvelle course disponible
-      socket.on('new_ride_request', ({ ride }) => {
-        if (isOnline) {
-          Vibration.vibrate([0, 500, 200, 500]);
-          setPendingRide(ride);
-          setShowRideModal(true);
-          addRideRequest(ride);
-        }
-      });
-
-      socket.on('ride_status_changed', ({ rideId, status }) => {
-        if (currentRide?.id === rideId) {
-          setCurrentRide({ ...currentRide, status });
-        }
-      });
-
-      socketRef.current = socket;
-    };
-
-    connectSocket();
-    return () => socketRef.current?.disconnect();
-  }, [isOnline]);
-
-  // Tracking GPS quand online
-  useEffect(() => {
-    if (isOnline) {
-      startLocationTracking();
-    } else {
-      stopLocationTracking();
-    }
-    return () => stopLocationTracking();
-  }, [isOnline]);
-
-  const startLocationTracking = async () => {
-    const { status } = await Location.requestBackgroundPermissionsAsync().catch(() => ({ status: 'denied' }));
-    locationWatchRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, distanceInterval: 20, timeInterval: 5000 },
-      async (loc) => {
-        const { latitude: lat, longitude: lng, speed, heading } = loc.coords;
-        setUserLocation({ lat, lng });
-
-        // Envoyer position au serveur
-        try {
-          await driverAPI.updateLocation(lat, lng, speed, heading);
-          socketRef.current?.emit('driver:update_location', { lat, lng, speed, heading });
-        } catch {}
-      }
-    );
+  const toggleOnline = async () => {
+    if (toggling) return;
+    setToggling(true);
+    await new Promise((r) => setTimeout(r, 400)); // animation delay
+    setOnline(!isOnline);
+    setToggling(false);
   };
 
-  const stopLocationTracking = () => {
-    locationWatchRef.current?.remove();
-    locationWatchRef.current = null;
-  };
-
-  const toggleOnline = async (value) => {
-    try {
-      await driverAPI.setAvailability(value ? 'online' : 'offline');
-      setIsOnline(value);
-      updateDriver({ availability: value ? 'online' : 'offline' });
-    } catch {
-      Alert.alert('Erreur', 'Impossible de changer la disponibilité.');
+  const centerMap = () => {
+    if (location && mapRef.current) {
+      mapRef.current.animateToRegion(
+        { ...location, latitudeDelta: 0.015, longitudeDelta: 0.015 }, 500
+      );
     }
   };
 
-  const handleAcceptRide = async () => {
-    if (!pendingRide) return;
-    setAcceptLoading(true);
-    try {
-      const { data } = await ridesAPI.accept(pendingRide.id);
-      setCurrentRide(data.ride);
-      setShowRideModal(false);
-      removeRideRequest(pendingRide.id);
-      navigation.navigate('ActiveRide', { rideId: data.ride.id });
-    } catch (err) {
-      Alert.alert('Erreur', err.response?.data?.message || 'Course non disponible');
-      setShowRideModal(false);
-    } finally {
-      setAcceptLoading(false);
-    }
+  const acceptRide = () => {
+    Alert.alert('Course acceptée', 'Rendez-vous au point de prise en charge.', [{ text: 'OK' }]);
+    setRideRequest(null);
   };
 
-  const handleDeclineRide = () => {
-    setShowRideModal(false);
-    removeRideRequest(pendingRide?.id);
-    socketRef.current?.emit('driver:ride_response', { rideId: pendingRide?.id, accepted: false });
-    setPendingRide(null);
-  };
+  const refuseRide = () => setRideRequest(null);
 
-  const isApproved = driver?.status === 'approved';
+  const firstName = driver?.firstName || 'Chauffeur';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
+
+  const rideTranslateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [300, 0],
+  });
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
 
+      {/* MAP */}
       <MapView
         ref={mapRef}
-        style={StyleSheet.absoluteFillObject}
+        style={styles.map}
         provider={PROVIDER_DEFAULT}
-        showsUserLocation
-        initialRegion={{ latitude: 14.7167, longitude: -17.4677, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
-      />
-
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
-        <View>
-          <Text style={styles.greeting}>Bonjour{user?.firstName ? `, ${user.firstName}` : ''} 👋</Text>
-          <View style={[styles.statusBadge, { backgroundColor: isOnline ? COLORS.success + '20' : COLORS.gray[100] }]}>
-            <View style={[styles.statusDot, { backgroundColor: isOnline ? COLORS.success : COLORS.gray[400] }]} />
-            <Text style={[styles.statusText, { color: isOnline ? COLORS.success : COLORS.gray[500] }]}>
-              {isOnline ? 'En ligne' : 'Hors ligne'}
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('Profile')}>
-          <Ionicons name="person" size={22} color={COLORS.secondary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Stats */}
-      <View style={[styles.statsCard, { top: insets.top + 90 }]}>
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>{todayStats.rides}</Text>
-          <Text style={styles.statLabel}>Courses</Text>
-        </View>
-        <View style={styles.statDiv} />
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>{todayStats.earnings}</Text>
-          <Text style={styles.statLabel}>FCFA gagnés</Text>
-        </View>
-        <View style={styles.statDiv} />
-        <View style={styles.stat}>
-          <Text style={[styles.statValue, { color: COLORS.accent }]}>
-            {parseFloat(driver?.rating || 0).toFixed(1)} ⭐
-          </Text>
-          <Text style={styles.statLabel}>Note</Text>
-        </View>
-      </View>
-
-      {/* Panel bas */}
-      <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + SPACING.sm }]}>
-        {!isApproved ? (
-          <View style={styles.pendingCard}>
-            <Ionicons name="hourglass" size={32} color={COLORS.warning} />
-            <View>
-              <Text style={styles.pendingTitle}>Compte en attente de validation</Text>
-              <Text style={styles.pendingSub}>
-                {driver?.status === 'pending' ? 'Vos documents sont en cours de vérification.' : driver?.rejectionReason || 'Compte non approuvé.'}
-              </Text>
-            </View>
-          </View>
-        ) : (
+        userInterfaceStyle="dark"
+        initialRegion={{
+          latitude: location?.latitude ?? PARIS.latitude,
+          longitude: location?.longitude ?? PARIS.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        }}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        customMapStyle={darkMapStyle}
+      >
+        {location && (
           <>
-            <View style={styles.toggleRow}>
-              <View>
-                <Text style={styles.toggleLabel}>Mode disponible</Text>
-                <Text style={styles.toggleSub}>
-                  {isOnline ? 'Vous recevez des courses' : 'Activez pour recevoir des courses'}
-                </Text>
+            {/* Driver dot */}
+            <Marker coordinate={location}>
+              <View style={styles.driverDot}>
+                <View style={styles.driverDotInner} />
               </View>
-              <Switch
-                value={isOnline}
-                onValueChange={toggleOnline}
-                trackColor={{ false: COLORS.gray[300], true: COLORS.primary }}
-                thumbColor={COLORS.white}
-                ios_backgroundColor={COLORS.gray[300]}
+            </Marker>
+            {/* Availability zone circle */}
+            {isOnline && (
+              <Circle
+                center={location}
+                radius={800}
+                fillColor="rgba(46,204,113,0.07)"
+                strokeColor="rgba(46,204,113,0.3)"
+                strokeWidth={1.5}
               />
-            </View>
-
-            {!isOnline && currentRide && (
-              <TouchableOpacity
-                style={styles.resumeBtn}
-                onPress={() => navigation.navigate('ActiveRide', { rideId: currentRide.id })}
-              >
-                <Ionicons name="bicycle" size={20} color={COLORS.white} />
-                <Text style={styles.resumeBtnText}>Reprendre la course en cours</Text>
-              </TouchableOpacity>
             )}
           </>
         )}
+      </MapView>
+
+      {/* Top header */}
+      <View style={styles.topBar}>
+        <View style={styles.statusPill}>
+          <View style={[styles.statusDot, { backgroundColor: isOnline ? COLORS.online : COLORS.offline }]} />
+          <Text style={styles.statusLabel}>{isOnline ? 'En ligne' : 'Hors ligne'}</Text>
+        </View>
+
+        <View style={styles.earningsBubble}>
+          <Text style={styles.earningsLabel}>Aujourd'hui</Text>
+          <Text style={styles.earningsValue}>{today.toFixed(2)} €</Text>
+        </View>
       </View>
 
-      {/* Modal course */}
-      <RideRequestModal
-        ride={pendingRide}
-        visible={showRideModal}
-        onAccept={handleAcceptRide}
-        onDecline={handleDeclineRide}
-        loading={acceptLoading}
-      />
+      {/* Recenter */}
+      <TouchableOpacity style={styles.locBtn} onPress={centerMap} activeOpacity={0.8}>
+        <Ionicons name="locate" size={20} color={COLORS.text} />
+      </TouchableOpacity>
+
+      {/* Bottom sheet */}
+      <View style={styles.sheet}>
+        {!isOnline ? (
+          <>
+            <Text style={styles.greeting}>{greeting}, {firstName} 👋</Text>
+            <Text style={styles.sheetSub}>Tu es hors ligne. Passe en ligne pour recevoir des courses.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.onlineTitle}>Tu es en ligne ✅</Text>
+            <Text style={styles.sheetSub}>En attente de courses dans ta zone…</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Ionicons name="bicycle" size={20} color={COLORS.primary} />
+                <Text style={styles.statValue}>{trips}</Text>
+                <Text style={styles.statLabel}>Courses</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Ionicons name="cash-outline" size={20} color={COLORS.accent} />
+                <Text style={styles.statValue}>{today.toFixed(0)} €</Text>
+                <Text style={styles.statLabel}>Gains</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Ionicons name="time-outline" size={20} color={COLORS.textSub} />
+                <Text style={styles.statValue}>—</Text>
+                <Text style={styles.statLabel}>Heures</Text>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Online/Offline toggle */}
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, isOnline ? styles.toggleBtnOnline : styles.toggleBtnOffline]}
+            onPress={toggleOnline}
+            activeOpacity={0.85}
+            disabled={toggling}
+          >
+            <Ionicons
+              name={isOnline ? 'pause-circle' : 'play-circle'}
+              size={26}
+              color={isOnline ? COLORS.bg : COLORS.primary}
+            />
+            <Text style={[styles.toggleText, { color: isOnline ? COLORS.bg : COLORS.primary }]}>
+              {isOnline ? 'Passer hors ligne' : 'Aller en ligne'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+
+      {/* Ride request banner */}
+      {rideRequest && (
+        <Animated.View style={[styles.rideRequest, { transform: [{ translateY: rideTranslateY }] }]}>
+          <View style={styles.rideHeader}>
+            <View style={styles.rideTag}>
+              <Ionicons name="bicycle" size={14} color={COLORS.bg} />
+              <Text style={styles.rideTagText}>Nouvelle course</Text>
+            </View>
+            <Text style={styles.ridePrice}>{rideRequest.price} €</Text>
+          </View>
+          <View style={styles.rideRoute}>
+            <View style={styles.rideDot} />
+            <Text style={styles.rideAddr}>{rideRequest.from}</Text>
+          </View>
+          <View style={[styles.rideRoute, { marginTop: 4 }]}>
+            <View style={[styles.rideDot, { backgroundColor: COLORS.primary }]} />
+            <Text style={styles.rideAddr}>{rideRequest.to}</Text>
+          </View>
+          <Text style={styles.rideDistance}>{rideRequest.distanceKm} km · ~{rideRequest.estimatedMin} min</Text>
+          <View style={styles.rideBtns}>
+            <TouchableOpacity style={styles.btnRefuse} onPress={refuseRide}>
+              <Text style={styles.btnRefuseText}>Refuser</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnAccept} onPress={acceptRide}>
+              <Text style={styles.btnAcceptText}>Accepter</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    position: 'absolute', top: 0, left: 0, right: 0,
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+
+  topBar: {
+    position: 'absolute', top: 56, left: 16, right: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md, backgroundColor: 'rgba(255,255,255,0.95)',
-    ...SHADOWS.small,
   },
-  greeting: { fontSize: SIZES.xLarge, fontWeight: '700', color: COLORS.secondary },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: RADIUS.full, marginTop: 4 },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.bgCard, borderRadius: RADIUS.full,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: COLORS.border,
+    ...SHADOW.card,
+  },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: SIZES.small, fontWeight: '700' },
-  profileBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: COLORS.gray[100], alignItems: 'center', justifyContent: 'center',
+  statusLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+
+  earningsBubble: {
+    backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg,
+    paddingHorizontal: 14, paddingVertical: 8,
+    alignItems: 'flex-end', borderWidth: 1, borderColor: COLORS.border,
+    ...SHADOW.card,
   },
-  statsCard: {
-    position: 'absolute', left: SPACING.md, right: SPACING.md,
-    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
-    flexDirection: 'row', padding: SPACING.md,
-    ...SHADOWS.medium,
+  earningsLabel: { fontSize: 10, color: COLORS.textSub, fontWeight: '600', textTransform: 'uppercase' },
+  earningsValue: { fontSize: 18, fontWeight: '800', color: COLORS.accent },
+
+  locBtn: {
+    position: 'absolute', bottom: 260, right: 16,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: COLORS.bgCard, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.border, ...SHADOW.card,
   },
-  stat: { flex: 1, alignItems: 'center' },
-  statDiv: { width: 1, backgroundColor: COLORS.gray[200] },
-  statValue: { fontSize: SIZES.xLarge, fontWeight: '800', color: COLORS.secondary },
-  statLabel: { fontSize: SIZES.small, color: COLORS.gray[500], marginTop: 2 },
-  bottomPanel: {
+
+  sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: SPACING.md, ...SHADOWS.large,
+    backgroundColor: COLORS.bgCard,
+    borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 36,
+    borderTopWidth: 1, borderColor: COLORS.border,
+    ...SHADOW.card,
   },
-  pendingCard: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
-    backgroundColor: COLORS.warning + '15', borderRadius: RADIUS.md, padding: SPACING.md,
+  greeting: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
+  onlineTitle: { fontSize: 20, fontWeight: '800', color: COLORS.primary, marginBottom: 6 },
+  sheetSub: { fontSize: 14, color: COLORS.textSub, marginBottom: 20 },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  statCard: {
+    flex: 1, backgroundColor: COLORS.bgInput, borderRadius: RADIUS.md,
+    padding: 12, alignItems: 'center', gap: 4,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  pendingTitle: { fontSize: SIZES.medium, fontWeight: '700', color: COLORS.secondary },
-  pendingSub: { fontSize: SIZES.small, color: COLORS.gray[600], marginTop: 2 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleLabel: { fontSize: SIZES.large, fontWeight: '700', color: COLORS.secondary },
-  toggleSub: { fontSize: SIZES.small, color: COLORS.gray[500], marginTop: 2 },
-  resumeBtn: {
+  statValue: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  statLabel: { fontSize: 11, color: COLORS.textSub, fontWeight: '600' },
+
+  toggleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: SPACING.sm, backgroundColor: COLORS.primary, borderRadius: RADIUS.md,
-    height: 48, marginTop: SPACING.md,
+    gap: 10, borderRadius: RADIUS.xl, paddingVertical: 16,
+    borderWidth: 2,
   },
-  resumeBtnText: { color: COLORS.white, fontWeight: '700' },
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  rideModal: { backgroundColor: COLORS.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: SPACING.xl },
-  modalHeader: { alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.lg },
-  pulse: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: COLORS.primary + '20', alignItems: 'center', justifyContent: 'center',
+  toggleBtnOffline: {
+    backgroundColor: 'transparent', borderColor: COLORS.primary,
   },
-  modalTitle: { fontSize: 24, fontWeight: '800', color: COLORS.secondary },
-  modalSub: { color: COLORS.gray[500] },
-  modalRoute: { gap: 4, marginBottom: SPACING.lg },
-  routeItem: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  routeConnector: { width: 2, height: 16, backgroundColor: COLORS.gray[300], marginLeft: 5 },
-  routeDot: { width: 10, height: 10, borderRadius: 5 },
-  routeText: { flex: 1, color: COLORS.gray[700], fontSize: SIZES.small },
-  modalStats: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: COLORS.gray[50], borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.lg },
-  modalStat: { alignItems: 'center' },
-  modalStatValue: { fontSize: SIZES.xLarge, fontWeight: '800', color: COLORS.secondary },
-  modalStatLabel: { fontSize: SIZES.small, color: COLORS.gray[500] },
-  modalActions: { flexDirection: 'row', gap: SPACING.md },
-  declineBtn: {
-    flex: 1, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: SPACING.sm, borderRadius: RADIUS.lg, borderWidth: 2, borderColor: COLORS.error,
+  toggleBtnOnline: {
+    backgroundColor: COLORS.primary, borderColor: COLORS.primary,
   },
-  declineBtnText: { color: COLORS.error, fontWeight: '700', fontSize: SIZES.large },
-  acceptBtn: {
-    flex: 2, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: SPACING.sm, borderRadius: RADIUS.lg, backgroundColor: COLORS.primary,
+  toggleText: { fontSize: 17, fontWeight: '800' },
+
+  // Driver dot on map
+  driverDot: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(46,204,113,0.2)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  acceptBtnText: { color: COLORS.white, fontWeight: '700', fontSize: SIZES.large },
+  driverDotInner: {
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: COLORS.primary,
+    borderWidth: 2, borderColor: '#fff',
+  },
+
+  // Ride request
+  rideRequest: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: COLORS.bgCard, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl,
+    padding: 20, paddingBottom: 36,
+    borderTopWidth: 1.5, borderColor: COLORS.primary,
+    ...SHADOW.green,
+  },
+  rideHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  rideTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 5,
+  },
+  rideTagText: { color: COLORS.bg, fontSize: 12, fontWeight: '800' },
+  ridePrice: { fontSize: 28, fontWeight: '900', color: COLORS.primary },
+  rideRoute: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 2 },
+  rideDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.accent },
+  rideAddr: { fontSize: 14, color: COLORS.text, flex: 1, fontWeight: '500' },
+  rideDistance: { fontSize: 12, color: COLORS.textSub, marginTop: 10, marginBottom: 16 },
+  rideBtns: { flexDirection: 'row', gap: 12 },
+  btnRefuse: {
+    flex: 1, paddingVertical: 14, borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.bgInput, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  btnRefuseText: { color: COLORS.textSub, fontWeight: '700', fontSize: 15 },
+  btnAccept: {
+    flex: 2, paddingVertical: 14, borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary, alignItems: 'center',
+    ...SHADOW.green,
+  },
+  btnAcceptText: { color: COLORS.bg, fontWeight: '800', fontSize: 15 },
 });
+
+// Dark map style (Google Maps style JSON)
+const darkMapStyle = [
+  { elementType: 'geometry', stylers: [{ color: '#0f0f1a' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8693a5' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0f0f1a' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#252545' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#1e1e35' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#2e2e50' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a16' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];

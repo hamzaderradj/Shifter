@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "TaxaMoto Chauffeur",
+    "slug": "taxa-moto-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1729"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.taxamoto.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "TaxaMoto utilise votre localisation pour les clients.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TaxaMoto a besoin de votre position en arrière-plan.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F1729"
+      },
+      "package": "com.taxamoto.driver",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      ["expo-location", {
+        "locationAlwaysAndWhenInUsePermission": "TaxaMoto Chauffeur a besoin de votre position pour les courses.",
+        "isIosBackgroundLocationEnabled": true,
+        "isAndroidBackgroundLocationEnabled": true
+      }],
+      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#FF6B35" }],
+      ["expo-task-manager"]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3000",
+      "eas": { "projectId": "your-eas-project-id-driver" }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "taxi-moto",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "apps/mobile-client",
+    "apps/mobile-driver",
+    "apps/admin"
+  ],
+  "scripts": {
+    "backend": "cd backend && npm run dev",
+    "client": "cd apps/mobile-client && npx expo start",
+    "driver": "cd apps/mobile-driver && npx expo start",
+    "admin": "cd apps/admin && npm run dev",
+    "db:migrate": "cd backend && npx prisma migrate dev",
+    "db:generate": "cd backend && npx prisma generate",
+    "db:studio": "cd backend && npx prisma studio",
+    "setup": "npm install && cd backend && npm install && cd ../apps/mobile-client && npm install && cd ../mobile-driver && npm install && cd ../admin && npm install"
+  }
+}

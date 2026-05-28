@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "TaxaMoto",
+    "slug": "taxa-moto-client",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F1729"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.taxamoto.client",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous.",
+        "NSLocationAlwaysUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F1729"
+      },
+      "package": "com.taxamoto.client",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "RECEIVE_SMS",
+        "READ_SMS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FF6B35",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TaxaMoto utilise votre position pour vous connecter avec les chauffeurs.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3000",
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  }
+}

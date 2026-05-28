@@ -1,0 +1,106 @@
+const router = require('express').Router();
+const { body, validationResult } = require('express-validator');
+const { PrismaClient } = require('@prisma/client');
+const { authenticate } = require('../middleware/auth');
+
+const prisma = new PrismaClient();
+
+// ── GET /users/favorites ──────────────────────────────────────
+router.get('/favorites', authenticate, async (req, res) => {
+  try {
+    const favorites = await prisma.favoriteAddress.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, favorites });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── POST /users/favorites ─────────────────────────────────────
+router.post('/favorites', authenticate,
+  body('label').notEmpty().trim(),
+  body('address').notEmpty(),
+  body('lat').isFloat(),
+  body('lng').isFloat(),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+    try {
+      const { label, address, lat, lng } = req.body;
+      const fav = await prisma.favoriteAddress.create({
+        data: { userId: req.user.id, label, address, lat, lng }
+      });
+      res.status(201).json({ success: true, favorite: fav });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  }
+);
+
+// ── DELETE /users/favorites/:id ───────────────────────────────
+router.delete('/favorites/:id', authenticate, async (req, res) => {
+  try {
+    await prisma.favoriteAddress.deleteMany({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── GET /users/notifications ──────────────────────────────────
+router.get('/notifications', authenticate, async (req, res) => {
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    res.json({ success: true, notifications });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── PUT /users/notifications/read-all ────────────────────────
+router.put('/notifications/read-all', authenticate, async (req, res) => {
+  try {
+    await prisma.notification.updateMany({
+      where: { userId: req.user.id, isRead: false },
+      data: { isRead: true }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── POST /users/support ───────────────────────────────────────
+router.post('/support', authenticate,
+  body('subject').notEmpty().trim(),
+  body('message').notEmpty().trim(),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+    try {
+      const ticket = await prisma.supportTicket.create({
+        data: {
+          userId: req.user.id,
+          rideId: req.body.rideId || null,
+          subject: req.body.subject,
+          message: req.body.message
+        }
+      });
+      res.status(201).json({ success: true, ticket });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  }
+);
+
+module.exports = router;

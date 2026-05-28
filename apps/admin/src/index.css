@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #F5F7FA; color: #0F1729; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #F1F3F5; }
+  ::-webkit-scrollbar-thumb { background: #CED4DA; border-radius: 3px; }
+}
+
+@layer components {
+  .btn-primary { @apply bg-primary text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50; }
+  .btn-secondary { @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition-colors; }
+  .btn-danger { @apply bg-danger text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity; }
+  .card { @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6; }
+  .badge-pending { @apply bg-yellow-100 text-yellow-700 text-xs font-semibold px-2 py-1 rounded-full; }
+  .badge-approved { @apply bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded-full; }
+  .badge-rejected { @apply bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded-full; }
+  .badge-suspended { @apply bg-gray-100 text-gray-700 text-xs font-semibold px-2 py-1 rounded-full; }
+}

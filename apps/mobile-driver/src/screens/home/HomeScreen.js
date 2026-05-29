@@ -205,6 +205,41 @@ export default function DriverHomeScreen() {
     outputRange: [300, 0],
   });
 
+  // ── Bannière statut compte ───────────────────────────────────
+  const driverStatus = driver?.status;
+  const isPending  = driverStatus === 'pending'  || !driverStatus;
+  const isRejected = driverStatus === 'rejected';
+  const isApproved = driverStatus === 'approved';
+
+  if (!isApproved) {
+    return (
+      <View style={styles.statusContainer}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+        <Ionicons
+          name={isRejected ? 'close-circle' : 'time-outline'}
+          size={64}
+          color={isRejected ? '#FF4B4B' : COLORS.primary}
+        />
+        <Text style={styles.statusTitle}>
+          {isRejected ? 'Dossier refusé' : 'Dossier en vérification'}
+        </Text>
+        <Text style={styles.statusText}>
+          {isRejected
+            ? 'Ton dossier a été refusé. Contacte le support pour plus d\'informations.'
+            : 'Notre équipe vérifie tes documents. Tu seras notifié par SMS une fois validé (24-48h).'}
+        </Text>
+        {isRejected && (
+          <TouchableOpacity
+            style={styles.statusBtn}
+            onPress={() => logout()}
+          >
+            <Text style={styles.statusBtnText}>Se déconnecter</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
@@ -464,6 +499,24 @@ const styles = StyleSheet.create({
     ...SHADOW.green,
   },
   btnAcceptText: { color: COLORS.bg, fontWeight: '800', fontSize: 15 },
+
+  // Écran d'attente validation
+  statusContainer: {
+    flex: 1, backgroundColor: COLORS.bg,
+    alignItems: 'center', justifyContent: 'center', padding: 32,
+  },
+  statusTitle: {
+    fontSize: 24, fontWeight: '800', color: '#FFFFFF',
+    marginTop: 20, marginBottom: 12, textAlign: 'center',
+  },
+  statusText: {
+    fontSize: 15, color: '#8693a5', textAlign: 'center', lineHeight: 24,
+  },
+  statusBtn: {
+    marginTop: 32, paddingHorizontal: 32, paddingVertical: 14,
+    borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: '#FF4B4B',
+  },
+  statusBtnText: { color: '#FF4B4B', fontWeight: '700', fontSize: 15 },
 });
 
 const darkMapStyle = [

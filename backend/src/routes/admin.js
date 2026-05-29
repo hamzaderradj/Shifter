@@ -121,6 +121,19 @@ router.put('/drivers/:id/suspend', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── PUT /admin/drivers/:id/rehabilitate ──────────────────────
+router.put('/drivers/:id/rehabilitate', ...adminOnly, async (req, res) => {
+  try {
+    const driver = await prisma.driver.update({
+      where: { id: req.params.id },
+      data: { status: 'approved', availability: 'offline' }
+    });
+    res.json({ success: true, driver });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // ── GET /admin/users ─────────────────────────────────────────
 router.get('/users', ...adminOnly, async (req, res) => {
   try {

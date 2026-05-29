@@ -35,6 +35,7 @@ export const adminAPI = {
   approveDriver: (id) => api.put(`/admin/drivers/${id}/approve`),
   rejectDriver: (id, reason) => api.put(`/admin/drivers/${id}/reject`, { reason }),
   suspendDriver: (id) => api.put(`/admin/drivers/${id}/suspend`),
+  rehabilitateDriver: (id) => api.put(`/admin/drivers/${id}/rehabilitate`),
   getUsers: (params) => api.get('/admin/users', { params }),
   toggleUser: (id) => api.put(`/admin/users/${id}/toggle`),
   getRides: (params) => api.get('/admin/rides', { params }),

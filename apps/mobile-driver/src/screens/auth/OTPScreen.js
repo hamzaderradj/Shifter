@@ -5,17 +5,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import * as SecureStore from 'expo-secure-store';
 import { useDriverAuthStore } from '../../store';
+import { authAPI, driverAPI } from '../../services/api';
 import { COLORS, RADIUS } from '../../utils/theme';
 
-const API_URL = 'https://shifter-bmbf.onrender.com';
 const CODE_LENGTH = 6;
 
 export default function DriverOTPScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { phone } = route.params || {};
-  const { setDriver, setToken } = useDriverAuthStore();
+  const { login } = useDriverAuthStore();
 
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -49,17 +50,28 @@ export default function DriverOTPScreen() {
   const verify = async (fullCode) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code: fullCode, role: 'driver' }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Code invalide');
-      setToken(data.token);
-      setDriver(data.driver || { phone, firstName: 'Chauffeur' });
+      // 1. Vérifier le code OTP
+      const { data } = await authAPI.verifyOtp(phone, fullCode);
+      if (!data.success) throw new Error(data.message || 'Code invalide');
+
+      // 2. Stocker les tokens dans SecureStore
+      await SecureStore.setItemAsync('driver_access_token', data.accessToken);
+      await SecureStore.setItemAsync('driver_refresh_token', data.refreshToken);
+
+      // 3. Récupérer le profil chauffeur s'il existe
+      let driver = null;
+      try {
+        const driverRes = await driverAPI.getMe();
+        driver = driverRes.data.driver;
+      } catch {
+        // Pas encore de profil chauffeur — on ira sur Registration
+      }
+
+      // 4. Mettre à jour le store (isAuthenticated → true → AppStack s'affiche)
+      login({ user: data.user, driver, token: data.accessToken, refreshToken: data.refreshToken });
+
     } catch (err) {
-      setError(err.message || 'Code invalide. Réessaie.');
+      setError(err.response?.data?.message || err.message || 'Code invalide. Réessaie.');
       setCode(['', '', '', '', '', '']);
       inputs.current[0]?.focus();
     } finally {
@@ -70,11 +82,7 @@ export default function DriverOTPScreen() {
   const resend = async () => {
     if (resendTimer > 0) return;
     try {
-      await fetch(`${API_URL}/api/auth/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, role: 'driver' }),
-      });
+      await authAPI.sendOtp(phone);
       setResendTimer(30);
       setError('');
     } catch {}

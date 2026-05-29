@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { driverAPI } from '../../services/api';
-import { useAuthStore } from '../../store';
+import { useDriverAuthStore } from '../../store';
 import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
 
 const STEPS = ['Véhicule', 'Documents', 'Terminé'];
@@ -23,7 +23,7 @@ const DOCUMENTS = [
 
 export default function RegistrationScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { updateDriver, updateUser } = useAuthStore();
+  const { updateDriver } = useDriverAuthStore();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [vehicle, setVehicle] = useState({ make: '', model: '', year: '', plate: '', color: '' });
@@ -40,7 +40,6 @@ export default function RegistrationScreen({ navigation }) {
         vehicleYear: vehicle.year, vehiclePlate: vehicle.plate, vehicleColor: vehicle.color,
       });
       updateDriver(data.driver);
-      updateUser({ role: 'driver' });
       setStep(1);
     } catch (err) {
       if (err.response?.status === 409) setStep(1);
@@ -182,8 +181,8 @@ export default function RegistrationScreen({ navigation }) {
             <Text style={styles.successText}>
               Votre dossier est en cours de vérification. Notre équipe vous contactera dans les 24-48h.
             </Text>
-            <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Home')}>
-              <Text style={styles.btnText}>Retour à l'accueil</Text>
+            <TouchableOpacity style={styles.btn} onPress={() => navigation.replace('MainTabs')}>
+              <Text style={styles.btnText}>Accéder à l'application</Text>
             </TouchableOpacity>
           </View>
         )}

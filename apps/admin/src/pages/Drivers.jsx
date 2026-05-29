@@ -236,6 +236,18 @@ export default function DriversPage() {
     } catch {} finally { setActionLoading(null); }
   };
 
+  const handleRehabilitate = async (id) => {
+    if (!window.confirm('Réhabiliter ce chauffeur ? Son compte sera réactivé (statut : Approuvé).')) return;
+    setActionLoading(id);
+    try {
+      await adminAPI.rehabilitateDriver(id);
+      setDrivers(prev => prev.map(d => d.id === id ? { ...d, status: 'approved' } : d));
+      if (docsTarget?.id === id) setDocsTarget(prev => ({ ...prev, status: 'approved' }));
+    } catch (err) {
+      alert('Erreur : ' + (err.response?.data?.message || err.message || 'Impossible de réhabiliter ce chauffeur.'));
+    } finally { setActionLoading(null); }
+  };
+
   const handleReject = async (reason) => {
     const target = rejectTarget;
     setActionLoading(target.id);
@@ -379,6 +391,16 @@ export default function DriversPage() {
                           title="Suspendre"
                         >
                           <AlertCircle size={18} />
+                        </button>
+                      )}
+                      {driver.status === 'suspended' && (
+                        <button
+                          onClick={() => handleRehabilitate(driver.id)}
+                          disabled={actionLoading === driver.id}
+                          className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50"
+                          title="Réhabiliter (lever la suspension)"
+                        >
+                          <CheckCircle size={18} />
                         </button>
                       )}
                       {/* Bouton documents — ouvre le modal */}

@@ -18,6 +18,7 @@ import EarningsScreen from '../screens/earnings/EarningsScreen';
 import TripsScreen from '../screens/trips/TripsScreen';
 import HelpScreen from '../screens/help/HelpScreen';
 import DriverProfileScreen from '../screens/profile/ProfileScreen';
+import RegistrationScreen from '../screens/profile/RegistrationScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -104,9 +105,14 @@ function AuthStack() {
 }
 
 function AppStack() {
+  const { driver } = useDriverAuthStore();
+  // Si le chauffeur n'a pas encore de profil → écran d'inscription en premier
+  const initialRouteName = driver?.id ? 'MainTabs' : 'Registration';
+
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="Registration" component={RegistrationScreen} />
     </Stack.Navigator>
   );
 }

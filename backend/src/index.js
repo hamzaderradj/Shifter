@@ -24,9 +24,19 @@ const app = express();
 const server = http.createServer(app);
 
 // ── Socket.io ─────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  config.frontendUrl,
+  'http://localhost:5173',
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'https://shifter-admin.netlify.app',
+  /^exp:\/\//,
+  /^https:\/\/.*\.netlify\.app$/,
+];
+
 const io = new Server(server, {
   cors: {
-    origin: [config.frontendUrl, 'http://localhost:8081', 'http://localhost:19006'],
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -41,7 +51,7 @@ app.set('io', io);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
 app.use(cors({
-  origin: [config.frontendUrl, 'http://localhost:8081', 'http://localhost:19006', /^exp:\/\//],
+  origin: ALLOWED_ORIGINS,
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));

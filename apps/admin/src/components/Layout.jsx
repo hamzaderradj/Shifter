@@ -33,7 +33,7 @@ export default function Layout() {
           </div>
           {sidebarOpen && (
             <div>
-              <p className="text-white font-bold text-lg leading-none">TaxaMoto</p>
+              <p className="text-white font-bold text-lg leading-none">Shifter</p>
               <p className="text-white/50 text-xs">Administration</p>
             </div>
           )}

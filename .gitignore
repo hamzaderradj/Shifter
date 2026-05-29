@@ -2,3 +2,6 @@ tok.env.rtf
 .DS_Store
 tok.env.rtf
 .DS_Store
+
+# Local Netlify folder
+.netlify

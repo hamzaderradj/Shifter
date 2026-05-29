@@ -200,10 +200,10 @@ const styles = StyleSheet.create({
   barWrap: { flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
   barAmount: { fontSize: 9, color: COLORS.textMuted, marginBottom: 4 },
   barTrack: {
-    width: '70%', height: 80, backgroundColor: COLORS.bgInput,
+    width: '70%', height: 80, backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: RADIUS.sm, overflow: 'hidden', justifyContent: 'flex-end',
   },
-  barFill: { width: '100%', backgroundColor: COLORS.bgElevated, borderRadius: RADIUS.sm },
+  barFill: { width: '100%', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: RADIUS.sm },
   barFillToday: { backgroundColor: COLORS.primary },
   barDay: { fontSize: 10, color: COLORS.textSub, marginTop: 6, fontWeight: '600' },
 

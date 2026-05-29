@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://shifter-bmbf.onrender.com';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${BASE_URL}/api`,
   timeout: 15000,
 });
 
@@ -23,8 +25,7 @@ api.interceptors.response.use(
 );
 
 export const authAPI = {
-  sendOtp: (phone) => api.post('/auth/send-otp', { phone }),
-  verifyOtp: (phone, code) => api.post('/auth/verify-otp', { phone, code }),
+  adminLogin: (email, password) => api.post('/auth/admin-login', { email, password }),
   getMe: () => api.get('/auth/me'),
 };
 

@@ -34,10 +34,10 @@ module.exports = {
   },
 
   pricing: {
-    baseFare: parseFloat(process.env.BASE_FARE) || 500,
-    pricePerKm: parseFloat(process.env.PRICE_PER_KM) || 150,
-    pricePerMinute: parseFloat(process.env.PRICE_PER_MINUTE) || 20,
-    minFare: parseFloat(process.env.MIN_FARE) || 1000,
+    baseFare: parseFloat(process.env.BASE_FARE) || 2.50,
+    pricePerKm: parseFloat(process.env.PRICE_PER_KM) || 1.50,
+    pricePerMinute: parseFloat(process.env.PRICE_PER_MINUTE) || 0.15,
+    minFare: parseFloat(process.env.MIN_FARE) || 5.00,
     platformCommission: parseFloat(process.env.PLATFORM_COMMISSION) || 0.20,
   },
 

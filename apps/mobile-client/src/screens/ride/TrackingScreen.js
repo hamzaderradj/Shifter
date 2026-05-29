@@ -252,7 +252,7 @@ export default function TrackingScreen({ navigation, route }) {
         {ride?.estimatedPrice && (
           <View style={styles.priceRow}>
             <Ionicons name="cash" size={18} color={COLORS.gray[600]} />
-            <Text style={styles.priceText}>Prix estimé: <Text style={styles.priceValue}>{ride.estimatedPrice} FCFA</Text></Text>
+            <Text style={styles.priceText}>Prix estimé: <Text style={styles.priceValue}>{parseFloat(ride.estimatedPrice || 0).toFixed(2)} €</Text></Text>
           </View>
         )}
 

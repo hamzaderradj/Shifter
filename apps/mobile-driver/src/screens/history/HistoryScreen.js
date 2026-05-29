@@ -37,7 +37,7 @@ export default function HistoryScreen() {
               <View style={styles.cardTop}>
                 <Text style={styles.date}>{format(new Date(item.requestedAt), 'dd MMM · HH:mm', { locale: fr })}</Text>
                 <Text style={[styles.price, { color: item.status === 'completed' ? COLORS.success : COLORS.error }]}>
-                  {item.status === 'completed' ? '+' + Math.round((parseFloat(item.finalPrice) || 0) * 0.8) + ' FCFA' : 'Annulée'}
+                  {item.status === 'completed' ? '+' + ((parseFloat(item.finalPrice) || 0) * 0.8).toFixed(2) + ' €' : 'Annulée'}
                 </Text>
               </View>
               <Text style={styles.route} numberOfLines={1}>Depart: {item.pickupAddress}</Text>

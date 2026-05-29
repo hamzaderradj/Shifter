@@ -55,14 +55,14 @@ export default function DashboardPage() {
         <StatCard icon={Users} label="Clients" value={stats?.totalUsers} color="primary" loading={loading} />
         <StatCard icon={Bike} label="Chauffeurs" value={stats?.totalDrivers} color="success" loading={loading} />
         <StatCard icon={Car} label="Courses totales" value={stats?.totalRides} color="warning" loading={loading} />
-        <StatCard icon={DollarSign} label="Revenus totaux" value={stats?.totalRevenue ? `${Math.round(stats.totalRevenue).toLocaleString()} FCFA` : '0'} color="primary" loading={loading} />
+        <StatCard icon={DollarSign} label="Revenus totaux" value={stats?.totalRevenue ? `${Math.round(stats.totalRevenue).toLocaleString()} €` : '0'} color="primary" loading={loading} />
       </div>
 
       {/* Today / Active */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Activity} label="Courses actives" value={stats?.activeRides} color="primary" loading={loading} sub="En ce moment" />
         <StatCard icon={Clock} label="Courses aujourd'hui" value={stats?.todayRides} color="success" loading={loading} />
-        <StatCard icon={TrendingUp} label="Revenus aujourd'hui" value={stats?.todayRevenue ? `${Math.round(stats.todayRevenue).toLocaleString()} FCFA` : '0'} color="warning" loading={loading} />
+        <StatCard icon={TrendingUp} label="Revenus aujourd'hui" value={stats?.todayRevenue ? `${Math.round(stats.todayRevenue).toLocaleString()} €` : '0'} color="warning" loading={loading} />
         <StatCard icon={AlertCircle} label="Chauffeurs en attente" value={stats?.pendingDrivers} color="danger" loading={loading} sub="À valider" />
       </div>
 

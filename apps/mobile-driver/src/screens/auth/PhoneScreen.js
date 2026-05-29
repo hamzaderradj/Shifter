@@ -96,14 +96,14 @@ export default function DriverPhoneScreen() {
               </>
             )}
           </TouchableOpacity>
-        </View>
 
-        <Text style={styles.terms}>
-          En continuant, tu acceptes nos{' '}
-          <Text style={styles.link}>Conditions d'utilisation</Text>
-          {' '}et notre{' '}
-          <Text style={styles.link}>Politique de confidentialité</Text>.
-        </Text>
+          <Text style={styles.terms}>
+            En continuant, tu acceptes nos{' '}
+            <Text style={styles.link}>Conditions d'utilisation</Text>
+            {' '}et notre{' '}
+            <Text style={styles.link}>Politique de confidentialité</Text>.
+          </Text>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
 
   terms: {
     textAlign: 'center', fontSize: 11, color: COLORS.textMuted,
-    paddingHorizontal: 24, paddingBottom: 24, lineHeight: 17,
+    marginTop: 20, lineHeight: 17,
   },
   link: { color: COLORS.textSub, fontWeight: '600' },
 });

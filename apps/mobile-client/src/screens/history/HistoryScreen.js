@@ -60,7 +60,7 @@ const RideCard = ({ ride, onPress }) => (
         </View>
       )}
       {ride.finalPrice && (
-        <Text style={styles.price}>{ride.finalPrice} FCFA</Text>
+        <Text style={styles.price}>{parseFloat(ride.finalPrice || 0).toFixed(2)} €</Text>
       )}
     </View>
   </TouchableOpacity>

@@ -27,7 +27,7 @@ const calculatePrice = (distanceKm, durationMinutes) => {
   const { baseFare, pricePerKm, pricePerMinute, minFare } = config.pricing;
   const raw = baseFare + (distanceKm * pricePerKm) + (durationMinutes * pricePerMinute);
   const price = Math.max(raw, minFare);
-  return Math.round(price / 10) * 10; // arrondi à 10 unités
+  return Math.round(price * 100) / 100; // arrondi à 2 décimales (euros)
 };
 
 /**

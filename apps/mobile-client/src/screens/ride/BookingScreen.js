@@ -23,10 +23,12 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Formule de prix ─────────────────────────────────────────────
-// Prix = 20 € de prise en charge + 1,50 € / km
+// ── Formule de prix (alignée sur le backend) ────────────────────
+// Base 2.50€ + 1.50€/km + 0.15€/min (vitesse ~30km/h), min 5.00€
 function calcPrice(distanceKm) {
-  return (20 + distanceKm * 2).toFixed(2);
+  const durationMin = Math.ceil((distanceKm / 30) * 60);
+  const raw = 2.50 + distanceKm * 1.50 + durationMin * 0.15;
+  return Math.max(raw, 5.00).toFixed(2);
 }
 
 // ── Durée estimée (vitesse moto ~30 km/h en ville) ─────────────
@@ -327,7 +329,7 @@ export default function BookingScreen({ navigation }) {
               <View style={styles.priceMain}>
                 <Text style={styles.priceLabel}>Prix estimé</Text>
                 <Text style={styles.priceValue}>{price} €</Text>
-                <Text style={styles.priceFormula}>20 € fixe + {distance.toFixed(1)} km × 2,00 €</Text>
+                <Text style={styles.priceFormula}>2,50 € fixe + {distance.toFixed(1)} km × 1,50 €</Text>
               </View>
               <View style={styles.priceDivider} />
               <View style={styles.priceStats}>
@@ -377,7 +379,7 @@ export default function BookingScreen({ navigation }) {
           <View style={styles.tariffInfo}>
             <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
             <Text style={styles.tariffText}>
-              Tarif transparent : 20 € de prise en charge + 2,00 € /km. Prix fixé avant la course.
+              Tarif transparent : 2,50 € de prise en charge + 1,50 € /km. Prix fixé avant la course.
             </Text>
           </View>
 

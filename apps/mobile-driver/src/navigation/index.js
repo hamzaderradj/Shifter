@@ -19,6 +19,7 @@ import TripsScreen from '../screens/trips/TripsScreen';
 import HelpScreen from '../screens/help/HelpScreen';
 import DriverProfileScreen from '../screens/profile/ProfileScreen';
 import RegistrationScreen from '../screens/profile/RegistrationScreen';
+import ActiveRideScreen from '../screens/ride/ActiveRideScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -113,6 +114,7 @@ function AppStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="Registration" component={RegistrationScreen} />
+      <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />
     </Stack.Navigator>
   );
 }

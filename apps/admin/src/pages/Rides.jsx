@@ -89,7 +89,7 @@ export default function RidesPage() {
                     <td className="px-4 py-3 text-xs text-gray-600 max-w-[150px] truncate">{ride.dropoffAddress}</td>
                     <td className="px-4 py-3 text-gray-600">{ride.distanceKm ? `${parseFloat(ride.distanceKm).toFixed(1)} km` : '—'}</td>
                     <td className="px-4 py-3 font-semibold text-secondary">
-                      {ride.finalPrice ? `${parseFloat(ride.finalPrice).toLocaleString()} FCFA` : ride.estimatedPrice ? `~${parseFloat(ride.estimatedPrice).toLocaleString()}` : '—'}
+                      {ride.finalPrice ? `${parseFloat(ride.finalPrice).toLocaleString()} €` : ride.estimatedPrice ? `~${parseFloat(ride.estimatedPrice).toLocaleString()}` : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs font-semibold px-2 py-1 rounded-full ${s.color}`}>{s.label}</span>

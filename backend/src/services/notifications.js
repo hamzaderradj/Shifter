@@ -77,7 +77,7 @@ const notifyRideCompleted = (clientId, rideId, price) =>
   sendPushNotification(clientId, {
     type: 'ride_completed',
     title: '🎉 Course terminée',
-    body: `Montant : ${price} FCFA. Notez votre chauffeur !`,
+    body: `Montant : ${price} €. Notez votre chauffeur !`,
     data: { rideId, action: 'ride_completed' }
   });
 

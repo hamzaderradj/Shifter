@@ -21,7 +21,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       <p className="font-semibold mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>
-          {p.name}: <strong>{p.name === 'revenue' ? `${p.value?.toLocaleString()} FCFA` : p.value}</strong>
+          {p.name}: <strong>{p.name === 'revenue' ? `${p.value?.toLocaleString()} €` : p.value}</strong>
         </p>
       ))}
     </div>
@@ -76,7 +76,7 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Courses totales', value: totalRides.toLocaleString(), color: 'text-primary' },
-          { label: 'Revenus bruts', value: `${Math.round(totalRevenue).toLocaleString()} FCFA`, color: 'text-green-600' },
+          { label: 'Revenus bruts', value: `${Math.round(totalRevenue).toLocaleString()} €`, color: 'text-green-600' },
           { label: 'Moy. courses/jour', value: avgRidesPerDay, color: 'text-blue-600' },
         ].map(kpi => (
           <div key={kpi.label} className="card text-center">
@@ -118,7 +118,7 @@ export default function AnalyticsPage() {
 
       {/* Revenue chart */}
       <div className="card">
-        <h3 className="font-bold text-secondary mb-6">Revenus quotidiens (FCFA)</h3>
+        <h3 className="font-bold text-secondary mb-6">Revenus quotidiens (€)</h3>
         {loading ? (
           <div className="h-64 bg-gray-100 animate-pulse rounded-xl" />
         ) : (
@@ -151,7 +151,7 @@ export default function AnalyticsPage() {
                   <p className="text-xs text-gray-400">{d.totalRides} courses · ★ {parseFloat(d.rating).toFixed(1)}</p>
                 </div>
                 <span className="font-bold text-green-600 text-sm">
-                  {Math.round(parseFloat(d.totalEarnings)).toLocaleString()} FCFA
+                  {Math.round(parseFloat(d.totalEarnings)).toLocaleString()} €
                 </span>
               </div>
             ))}

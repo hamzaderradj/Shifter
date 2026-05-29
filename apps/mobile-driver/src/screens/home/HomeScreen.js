@@ -8,7 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import axios from 'axios';
 import Constants from 'expo-constants';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useDriverAuthStore, useDriverStatusStore, useEarningsStore } from '../../store';
+import { driverAPI } from '../../services/api';
 import { COLORS, RADIUS, SHADOW } from '../../utils/theme';
 import {
   connectSocket, disconnectSocket,
@@ -26,13 +28,39 @@ export default function DriverHomeScreen() {
   const locationIntervalRef = useRef(null);
   const unsubRideRef = useRef(null);
 
-  const { driver, token, logout } = useDriverAuthStore();
+  const navigation = useNavigation();
+  const { driver, token, logout, updateDriver } = useDriverAuthStore();
   const { isOnline, setOnline, rideRequest, setRideRequest } = useDriverStatusStore();
-  const { today, trips } = useEarningsStore();
+  const { today, trips, setEarnings } = useEarningsStore();
 
   const [location, setLocation] = useState(null);
   const [toggling, setToggling] = useState(false);
   const [acceptingRide, setAcceptingRide] = useState(false);
+
+  // ── Rafraîchir le statut chauffeur + gains du jour à chaque focus ──────────
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const [meRes, earningsRes] = await Promise.allSettled([
+            driverAPI.getMe(),
+            driverAPI.getEarnings('today'),
+          ]);
+          if (meRes.status === 'fulfilled' && meRes.value.data.driver) {
+            updateDriver(meRes.value.data.driver);
+          }
+          if (earningsRes.status === 'fulfilled') {
+            const d = earningsRes.value.data;
+            setEarnings({
+              today: d.netEarnings ?? 0,
+              week: d.netEarnings ?? 0,
+              trips: d.totalRides ?? 0,
+            });
+          }
+        } catch {}
+      })();
+    }, [])
+  );
 
   // ── Géolocalisation ──────────────────────────────────────────
   useEffect(() => {
@@ -173,15 +201,17 @@ export default function DriverHomeScreen() {
   const acceptRide = async () => {
     if (!rideRequest || acceptingRide) return;
     setAcceptingRide(true);
+    const ride = rideRequest;
     try {
       await axios.post(
-        `${API_URL}/api/rides/${rideRequest.id}/accept`,
+        `${API_URL}/api/rides/${ride.id}/accept`,
         {},
         { headers: { Authorization: `Bearer ${token}` }, timeout: 8000 }
       );
-      joinRide(rideRequest.id);
+      joinRide(ride.id);
       setRideRequest(null);
-      Alert.alert('Course acceptée ✅', 'Rendez-vous au point de prise en charge.');
+      // Naviguer vers l'écran de course active
+      navigation.navigate('ActiveRide', { rideId: ride.id, ride });
     } catch (err) {
       const msg = err.response?.data?.message || 'Course non disponible';
       Alert.alert('Impossible', msg);

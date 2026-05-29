@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, Bike, Car, TrendingUp, AlertCircle,
-  Activity, Clock, DollarSign
+  Activity, Clock, DollarSign, Trash2
 } from 'lucide-react';
 import { adminAPI } from '../services/api';
 
@@ -35,6 +35,7 @@ const StatCard = ({ icon: Icon, label, value, sub, color = 'primary', loading })
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     adminAPI.getStats()
@@ -42,6 +43,20 @@ export default function DashboardPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const handleReset = async () => {
+    if (!window.confirm('⚠️ Supprimer TOUTES les courses et remettre les compteurs à zéro ? Cette action est irréversible.')) return;
+    setResetting(true);
+    try {
+      const { data } = await adminAPI.resetTestData();
+      alert(`✅ Reset effectué !\n${data.ridesDeleted} courses supprimées\n${data.driversReset} chauffeur(s) remis à zéro`);
+      window.location.reload();
+    } catch (err) {
+      alert('❌ Erreur : ' + (err.response?.data?.message || err.message));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -64,6 +79,21 @@ export default function DashboardPage() {
         <StatCard icon={Clock} label="Courses aujourd'hui" value={stats?.todayRides} color="success" loading={loading} />
         <StatCard icon={TrendingUp} label="Revenus aujourd'hui" value={stats?.todayRevenue ? `${Math.round(stats.todayRevenue).toLocaleString()} €` : '0'} color="warning" loading={loading} />
         <StatCard icon={AlertCircle} label="Chauffeurs en attente" value={stats?.pendingDrivers} color="danger" loading={loading} sub="À valider" />
+      </div>
+
+      {/* Zone dangereuse */}
+      <div className="card border border-red-200 bg-red-50">
+        <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2">
+          <Trash2 size={18} /> Zone de développement — Reset des données
+        </h3>
+        <p className="text-sm text-red-600 mb-4">Supprime toutes les courses et remet les compteurs chauffeurs à zéro. Les comptes sont conservés.</p>
+        <button
+          onClick={handleReset}
+          disabled={resetting}
+          className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
+        >
+          {resetting ? '⏳ Reset en cours…' : '🗑️ Supprimer toutes les données de test'}
+        </button>
       </div>
 
       {/* Quick actions */}

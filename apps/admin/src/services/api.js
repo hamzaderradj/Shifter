@@ -41,6 +41,7 @@ export const adminAPI = {
   getRides: (params) => api.get('/admin/rides', { params }),
   getAnalytics: (days) => api.get(`/admin/analytics?days=${days}`),
   getSosAlerts: () => api.get('/admin/sos-alerts'),
+  resetTestData: () => api.post('/admin/reset-test-data'),
 };
 
 export default api;

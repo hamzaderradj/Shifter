@@ -8,6 +8,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
 import { useDriverAuthStore } from '../../store';
 import { authAPI, driverAPI } from '../../services/api';
+import { registerPushToken } from '../../../App';
 import { COLORS, RADIUS } from '../../utils/theme';
 
 const CODE_LENGTH = 6;
@@ -69,6 +70,9 @@ export default function DriverOTPScreen() {
 
       // 4. Mettre à jour le store (isAuthenticated → true → AppStack s'affiche)
       login({ user: data.user, driver, token: data.accessToken, refreshToken: data.refreshToken });
+
+      // 5. Enregistrer le push token maintenant qu'on est authentifié
+      registerPushToken().catch(() => {});
 
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Code invalide. Réessaie.');

@@ -48,6 +48,15 @@
     },
     "plugins": [
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#2ECC71",
+          "androidMode": "default",
+          "androidCollapsedTitle": "Nouvelle course"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Shifter Rider utilise votre position pour vous envoyer des courses.",

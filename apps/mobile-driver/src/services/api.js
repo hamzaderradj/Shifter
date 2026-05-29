@@ -20,14 +20,20 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && error.response?.data?.code === 'TOKEN_EXPIRED' && !original._retry) {
+    // Tenter le refresh sur TOKEN_EXPIRED ou Token invalide (secret changé)
+    const is401 = error.response?.status === 401;
+    const isRefreshRoute = original?.url?.includes('/auth/refresh-token');
+    if (is401 && !original._retry && !isRefreshRoute) {
       original._retry = true;
       try {
         const refreshToken = await SecureStore.getItemAsync('driver_refresh_token');
+        if (!refreshToken) throw new Error('No refresh token');
         const { data } = await axios.post(`${API_URL}/api/auth/refresh-token`, { refreshToken });
-        await SecureStore.setItemAsync('driver_access_token', data.accessToken);
-        original.headers.Authorization = `Bearer ${data.accessToken}`;
-        return api(original);
+        if (data.accessToken) {
+          await SecureStore.setItemAsync('driver_access_token', data.accessToken);
+          original.headers.Authorization = `Bearer ${data.accessToken}`;
+          return api(original);
+        }
       } catch {
         await SecureStore.deleteItemAsync('driver_access_token');
         await SecureStore.deleteItemAsync('driver_refresh_token');

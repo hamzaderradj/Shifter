@@ -263,4 +263,29 @@ router.get('/sos-alerts', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── POST /admin/reset-test-data ───────────────────────────────
+// Supprime toutes les courses et remet les compteurs à zéro
+// À n'utiliser qu'en phase de développement
+router.post('/reset-test-data', ...adminOnly, async (req, res) => {
+  try {
+    // Supprimer les notes (FK sur rides)
+    await prisma.rating.deleteMany({});
+    // Supprimer les courses
+    const ridesDeleted = await prisma.ride.deleteMany({});
+    // Remettre compteurs chauffeurs à zéro
+    const driversReset = await prisma.driver.updateMany({
+      data: { totalEarnings: 0, totalRides: 0, rating: null, ratingCount: 0, availability: 'offline' }
+    });
+    res.json({
+      success: true,
+      message: 'Données de test supprimées',
+      ridesDeleted: ridesDeleted.count,
+      driversReset: driversReset.count
+    });
+  } catch (err) {
+    console.error('reset-test-data:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

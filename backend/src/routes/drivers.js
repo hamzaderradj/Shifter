@@ -9,7 +9,10 @@ const { authenticate, requireRole, requireDriver } = require('../middleware/auth
 const prisma = new PrismaClient();
 
 // Supabase Storage client (service role pour bypass RLS)
-const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey);
+// Node 20 n'a pas WebSocket natif — on désactive le realtime (pas besoin pour Storage)
+const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
+  realtime: { transport: require('ws') },
+});
 const BUCKET = 'driver-documents';
 
 // Multer : mémoire (pas de disque — Render est éphémère)

@@ -104,7 +104,7 @@ router.post('/logout', authenticate, async (req, res) => {
 });
 
 // ── POST /auth/admin-login ──────────────────────────────────
-// Connexion email + mot de passe pour les admins (2 comptes fixes)
+// Connexion email + mot de passe pour les 2 admins (comptes fixes)
 router.post('/admin-login',
   body('email').isEmail().withMessage('Email invalide'),
   body('password').notEmpty().withMessage('Mot de passe requis'),
@@ -114,37 +114,36 @@ router.post('/admin-login',
 
     try {
       const { email, password } = req.body;
-      const bcrypt = require('bcryptjs');
 
-      // Comptes admin définis dans les variables d'environnement
+      // 2 comptes admin fixes (mot de passe en clair, privé côté serveur)
       const ADMINS = [
         {
-          email: process.env.ADMIN_1_EMAIL || 'samyderradj57@gmail.com',
-          username: process.env.ADMIN_1_USERNAME || 'Samy15',
-          passwordHash: process.env.ADMIN_1_HASH || '$2a$12$E3iYK1N52e/qhamw5fhLG.Nbz7YZvOlnJUAFcygkH2wH6rYJtGR8.',
+          email: 'samyderradj57@gmail.com',
+          password: process.env.ADMIN_1_PASSWORD || 'Smy9380',
+          username: 'Samy15',
           firstName: 'Samy',
           lastName: 'Derradj',
         },
         {
-          email: process.env.ADMIN_2_EMAIL || 'hamza.derradjpro@gmail.com',
-          username: process.env.ADMIN_2_USERNAME || 'Hamza03',
-          passwordHash: process.env.ADMIN_2_HASH || '$2a$12$xtE7pudegN7DO0nxecSKYOwQo0LOIRRf2Uj3CQ5UwABXfVc.QxBum',
+          email: 'hamza.derradjpro@gmail.com',
+          password: process.env.ADMIN_2_PASSWORD || 'Hmz9380',
+          username: 'Hamza03',
           firstName: 'Hamza',
           lastName: 'Derradj',
         },
       ];
 
-      const adminDef = ADMINS.find(a => a.email.toLowerCase() === email.toLowerCase());
-      if (!adminDef) return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
-
-      const valid = await bcrypt.compare(password, adminDef.passwordHash);
-      if (!valid) return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
+      const adminDef = ADMINS.find(
+        a => a.email.toLowerCase() === email.trim().toLowerCase()
+      );
+      if (!adminDef || adminDef.password !== password) {
+        return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect' });
+      }
 
       // Trouver ou créer l'utilisateur admin en base
-      let user = await prisma.user.findUnique({ where: { email: adminDef.email } });
+      let user = await prisma.user.findFirst({ where: { email: adminDef.email } });
       if (!user) {
-        // Créer avec un phone fictif unique basé sur l'email (non utilisé pour la connexion admin)
-        const fakePhone = '+336' + Buffer.from(adminDef.email).toString('hex').slice(0, 8);
+        const fakePhone = `+33600${adminDef.username.replace(/\D/g, '').padStart(6, '0')}`;
         user = await prisma.user.create({
           data: {
             phone: fakePhone,
@@ -156,15 +155,19 @@ router.post('/admin-login',
             isVerified: true,
           }
         });
-      } else if (user.role !== 'admin') {
-        await prisma.user.update({ where: { id: user.id }, data: { role: 'admin' } });
-        user.role = 'admin';
       }
 
-      const { generateTokens } = require('../services/auth');
-      const { accessToken, refreshToken } = await generateTokens(user.id);
+      // S'assurer que le rôle est bien admin
+      if (user.role !== 'admin') {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { role: 'admin', lastLoginAt: new Date() }
+        });
+      } else {
+        await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+      }
 
-      await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+      const { accessToken, refreshToken } = await generateTokens(user.id);
 
       res.json({
         success: true,
@@ -180,8 +183,8 @@ router.post('/admin-login',
         }
       });
     } catch (err) {
-      console.error('Admin login error:', err);
-      res.status(500).json({ success: false, message: 'Erreur serveur' });
+      console.error('[Admin Login Error]', err.message);
+      res.status(500).json({ success: false, message: 'Erreur serveur : ' + err.message });
     }
   }
 );

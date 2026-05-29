@@ -274,7 +274,7 @@ router.post('/reset-test-data', ...adminOnly, async (req, res) => {
     const ridesDeleted = await prisma.ride.deleteMany({});
     // Remettre compteurs chauffeurs à zéro
     const driversReset = await prisma.driver.updateMany({
-      data: { totalEarnings: 0, totalRides: 0, ratingCount: 0, availability: 'offline' }
+      data: { totalEarnings: 0, totalRides: 0, availability: 'offline' }
     });
     res.json({
       success: true,

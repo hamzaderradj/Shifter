@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRideStore } from '../../store';
 import { ridesAPI } from '../../services/api';
-import { getSocket, joinRide, subscribeToDriver, unsubscribeFromDriver } from '../../services/socket';
+import { initSocket, getSocket, joinRide, subscribeToDriver, unsubscribeFromDriver } from '../../services/socket';
 import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
 
 const STATUS_CONFIG = {
@@ -43,31 +43,39 @@ export default function TrackingScreen({ navigation, route }) {
     }
   }, [rideStatus]);
 
-  // Charger la course
+  // Ref pour accéder aux valeurs courantes dans les callbacks socket sans re-créer les listeners
+  const rideRef = useRef(ride);
+  useEffect(() => { rideRef.current = ride; }, [ride]);
+
+  // Charger la course + attacher les listeners socket (une seule fois)
   useEffect(() => {
-    (async () => {
+    let socket = null;
+
+    const setup = async () => {
+      // Charger la course depuis l'API
       try {
         const { data } = await ridesAPI.getById(rideId);
         setRide(data.ride);
         setActiveRide(data.ride);
         updateRideStatus(data.ride.status);
-
-        // S'abonner au socket
-        joinRide(rideId);
-        if (data.ride.driver) {
-          subscribeToDriver(data.ride.driver.id);
-        }
+        rideRef.current = data.ride;
       } catch {}
-    })();
-  }, [rideId]);
 
-  // Écouter les événements socket
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
+      // S'assurer que le socket est connecté
+      socket = getSocket() || await initSocket();
+      if (!socket) return;
 
-    socket.on('ride_status_changed', ({ rideId: id, status }) => {
-      if (id === rideId) {
+      // Rejoindre la room de la course
+      joinRide(rideId);
+
+      // Abonnement au chauffeur si déjà assigné
+      if (rideRef.current?.driver) {
+        subscribeToDriver(rideRef.current.driver.id);
+      }
+
+      // ── Listeners socket ─────────────────────────────────
+      socket.on('ride_status_changed', ({ rideId: id, status }) => {
+        if (id !== rideId) return;
         updateRideStatus(status);
         if (status === 'completed') {
           navigation.replace('Rating', { rideId });
@@ -77,34 +85,38 @@ export default function TrackingScreen({ navigation, route }) {
             { text: 'OK', onPress: () => { clearRide(); navigation.navigate('Home'); } }
           ]);
         }
-      }
-    });
+      });
 
-    socket.on('driver:location_updated', ({ driverId, lat, lng }) => {
-      if (ride?.driver?.id === driverId) {
+      socket.on('driver:location_updated', ({ driverId, lat, lng }) => {
+        if (rideRef.current?.driver?.id !== driverId) return;
         setDriverLocation({ lat, lng });
         mapRef.current?.animateToRegion({
           latitude: lat, longitude: lng,
           latitudeDelta: 0.01, longitudeDelta: 0.01
         }, 500);
-      }
-    });
+      });
 
-    socket.on('ride_accepted', ({ ride: updatedRide }) => {
-      if (updatedRide.id === rideId) {
+      socket.on('ride_accepted', ({ ride: updatedRide }) => {
+        if (updatedRide.id !== rideId) return;
         setRide(updatedRide);
         setActiveRide(updatedRide);
         updateRideStatus('accepted');
         subscribeToDriver(updatedRide.driver.id);
-      }
-    });
+      });
+    };
+
+    setup();
 
     return () => {
-      socket.off('ride_status_changed');
-      socket.off('driver:location_updated');
-      socket.off('ride_accepted');
+      // Cleanup : retirer les listeners spécifiques à cet écran
+      const s = getSocket();
+      if (s) {
+        s.off('ride_status_changed');
+        s.off('driver:location_updated');
+        s.off('ride_accepted');
+      }
     };
-  }, [ride]);
+  }, [rideId]); // dépend uniquement de rideId — stable pendant toute la vie de l'écran
 
   const handleCancel = () => {
     Alert.alert('Annuler la course', 'Êtes-vous sûr ?', [

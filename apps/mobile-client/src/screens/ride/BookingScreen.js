@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { ridesAPI } from '../../services/api';
 import { useMapStore, useRideStore } from '../../store';
-import { joinRide } from '../../services/socket';
+import { joinRide, initSocket, getSocket } from '../../services/socket';
 
 // ── Calcul de distance (formule Haversine) ──────────────────────
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -210,6 +210,8 @@ export default function BookingScreen({ navigation }) {
       });
       if (data.success) {
         setActiveRide(data.ride);
+        // S'assurer que le socket est connecté avant de rejoindre la room
+        if (!getSocket()?.connected) await initSocket();
         joinRide(data.ride.id);
         navigation.replace('Tracking', { rideId: data.ride.id });
       }

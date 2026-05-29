@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Dimensions, ActivityIndicator
@@ -6,8 +6,9 @@ import {
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useNavigation } from '@react-navigation/native';
-import { useAuthStore, useMapStore } from '../../store';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useAuthStore, useMapStore, useRideStore } from '../../store';
+import { ridesAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
 
@@ -18,8 +19,26 @@ export default function HomeScreen() {
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { userLocation, setUserLocation } = useMapStore();
+  const { setActiveRide } = useRideStore();
   const mapRef = useRef(null);
   const [locError, setLocError] = useState(false);
+
+  // ── Vérifier si une course est déjà active (reprise après restart) ──
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const { data } = await ridesAPI.getActive();
+          if (data.ride) {
+            setActiveRide(data.ride);
+            navigation.navigate('Tracking', { rideId: data.ride.id });
+          }
+        } catch {
+          // Pas de course active, on reste sur l'accueil
+        }
+      })();
+    }, [])
+  );
 
   useEffect(() => {
     (async () => {

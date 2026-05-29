@@ -121,13 +121,9 @@ router.post('/', authenticate,
         include: { client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } } }
       });
 
-      // Émettre via Socket.io (géré dans socket/index.js)
-      const io = req.app.get('io');
-      if (io) io.emit('new_ride_request', { ride });
-
-      // Trouver et notifier les chauffeurs proches
+      // Trouver les chauffeurs proches et les notifier via Socket.io (ciblé)
       const nearbyDrivers = await prisma.$queryRaw`
-        SELECT d.user_id FROM drivers d
+        SELECT d.id as driver_id, d.user_id FROM drivers d
         WHERE d.status = 'approved' AND d.availability = 'online'
           AND d.current_lat IS NOT NULL
           AND (6371 * acos(
@@ -137,8 +133,30 @@ router.post('/', authenticate,
           )) <= 5
       `;
 
+      const io = req.app.get('io');
       const clientName = `${ride.client.firstName || 'Client'} ${ride.client.lastName || ''}`.trim();
+
       for (const d of nearbyDrivers) {
+        // Émettre uniquement aux chauffeurs connectés et proches
+        if (io) {
+          io.sendToUser(d.user_id, 'new_ride_request', {
+            ride: {
+              id: ride.id,
+              pickupAddress: ride.pickupAddress,
+              pickupLat: ride.pickupLat,
+              pickupLng: ride.pickupLng,
+              dropoffAddress: ride.dropoffAddress,
+              dropoffLat: ride.dropoffLat,
+              dropoffLng: ride.dropoffLng,
+              estimatedPrice: ride.estimatedPrice,
+              distanceKm: ride.distanceKm,
+              durationMinutes: ride.durationMinutes,
+              paymentMethod: ride.paymentMethod,
+              client: ride.client,
+              createdAt: ride.createdAt,
+            }
+          });
+        }
         notifyRideRequest(d.user_id, ride.id, clientName, ride.pickupAddress);
       }
 

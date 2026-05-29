@@ -28,6 +28,12 @@ const _authStore = create(
 
       setLoading: (isLoading) => set({ isLoading }),
       finishLoading: () => set({ isLoading: false }),
+
+      // init() : appelé au démarrage — la rehydration Zustand s'occupe de tout
+      init: () => new Promise((resolve) => {
+        // Zustand persist rehydrate automatiquement, on attend juste 300ms
+        setTimeout(() => { set({ isLoading: false }); resolve(); }, 300);
+      }),
     }),
     {
       name: 'driver-auth-storage',

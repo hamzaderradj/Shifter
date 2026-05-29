@@ -78,6 +78,28 @@ module.exports = (io) => {
       socket.leave(`tracking_driver_${driverId}`);
     });
 
+    // ── Driver: changer disponibilité (online/offline) ──
+    socket.on('driver:set_availability', async ({ availability }) => {
+      if (!user.driver) return;
+      if (!['online', 'offline'].includes(availability)) return;
+
+      try {
+        await prisma.driver.update({
+          where: { id: user.driver.id },
+          data: { availability }
+        });
+
+        // Mettre à jour le cache en mémoire
+        user.driver.availability = availability;
+
+        socket.emit('driver:availability_updated', { availability, timestamp: Date.now() });
+        console.log(`[Socket] Driver ${user.driver.id} → ${availability}`);
+      } catch (err) {
+        console.error('Availability update error:', err.message);
+        socket.emit('driver:availability_error', { message: 'Impossible de changer la disponibilité' });
+      }
+    });
+
     // ── Driver: répondre à une course ────────────────────
     socket.on('driver:ride_response', ({ rideId, accepted }) => {
       if (!accepted) {

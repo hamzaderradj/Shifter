@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Dimensions, Animated, Alert,
@@ -6,26 +6,97 @@ import {
 import MapView, { Marker, PROVIDER_DEFAULT, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import axios from 'axios';
+import Constants from 'expo-constants';
 import { useDriverAuthStore, useDriverStatusStore, useEarningsStore } from '../../store';
 import { COLORS, RADIUS, SHADOW } from '../../utils/theme';
+import {
+  connectSocket, disconnectSocket,
+  setAvailability, onRideRequest, sendRideResponse,
+  joinRide,
+} from '../../services/socket';
 
 const { height, width } = Dimensions.get('window');
 const PARIS = { latitude: 48.8566, longitude: 2.3522 };
+const API_URL = Constants.expoConfig?.extra?.apiUrl || 'https://shifter-bmbf.onrender.com';
 
 export default function DriverHomeScreen() {
   const mapRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const unsubRideRef = useRef(null);
 
-  const { driver } = useDriverAuthStore();
+  const { driver, token } = useDriverAuthStore();
   const { isOnline, setOnline, rideRequest, setRideRequest } = useDriverStatusStore();
   const { today, trips } = useEarningsStore();
 
   const [location, setLocation] = useState(null);
   const [locError, setLocError] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [acceptingRide, setAcceptingRide] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
 
-  // Pulse animation when online
+  // ── Géolocalisation getter (utilisé par le service socket) ──
+  const getCurrentLocation = useCallback(async () => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      return {
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+        speed: loc.coords.speed,
+        heading: loc.coords.heading,
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // ── Connexion Socket.io au montage ───────────────────────────
+  useEffect(() => {
+    if (!token) return;
+
+    const sock = connectSocket(token);
+    sock.on('connect', () => setSocketReady(true));
+    sock.on('disconnect', () => setSocketReady(false));
+    if (sock.connected) setSocketReady(true);
+
+    // Écouter les nouvelles courses
+    unsubRideRef.current = onRideRequest((data) => {
+      if (!useDriverStatusStore.getState().isOnline) return; // ignoré si hors ligne
+      setRideRequest({
+        id: data.ride.id,
+        from: data.ride.pickupAddress,
+        to: data.ride.dropoffAddress,
+        price: data.ride.estimatedPrice,
+        distanceKm: data.ride.distanceKm,
+        estimatedMin: data.ride.durationMinutes,
+        pickupLat: data.ride.pickupLat,
+        pickupLng: data.ride.pickupLng,
+        client: data.ride.client,
+      });
+    });
+
+    return () => {
+      if (unsubRideRef.current) unsubRideRef.current();
+      disconnectSocket();
+    };
+  }, [token]);
+
+  // ── Permission géolocalisation ───────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') { setLocError(true); return; }
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      } catch {
+        setLocError(true);
+      }
+    })();
+  }, []);
+
+  // ── Pulse animation ──────────────────────────────────────────
   useEffect(() => {
     if (isOnline) {
       Animated.loop(
@@ -40,7 +111,7 @@ export default function DriverHomeScreen() {
     }
   }, [isOnline]);
 
-  // Slide-in ride request banner
+  // ── Slide-in ride request banner ─────────────────────────────
   useEffect(() => {
     if (rideRequest) {
       Animated.spring(slideAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }).start();
@@ -49,25 +120,26 @@ export default function DriverHomeScreen() {
     }
   }, [rideRequest]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { setLocError(true); return; }
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-      } catch {
-        setLocError(true);
-      }
-    })();
-  }, []);
-
+  // ── Toggle en ligne / hors ligne ─────────────────────────────
   const toggleOnline = async () => {
     if (toggling) return;
+
+    if (!socketReady) {
+      Alert.alert('Connexion', 'Connexion au serveur en cours… Réessaie dans quelques secondes.');
+      return;
+    }
+
     setToggling(true);
-    await new Promise((r) => setTimeout(r, 400)); // animation delay
-    setOnline(!isOnline);
-    setToggling(false);
+    const nextOnline = !isOnline;
+
+    try {
+      await setAvailability(nextOnline, nextOnline ? getCurrentLocation : null);
+      setOnline(nextOnline);
+    } catch (err) {
+      Alert.alert('Erreur', err.message || 'Impossible de changer la disponibilité.');
+    } finally {
+      setToggling(false);
+    }
   };
 
   const centerMap = () => {
@@ -78,12 +150,33 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const acceptRide = () => {
-    Alert.alert('Course acceptée', 'Rendez-vous au point de prise en charge.', [{ text: 'OK' }]);
-    setRideRequest(null);
+  // ── Accepter une course via HTTP ─────────────────────────────
+  const acceptRide = async () => {
+    if (!rideRequest || acceptingRide) return;
+    setAcceptingRide(true);
+    try {
+      await axios.post(
+        `${API_URL}/api/rides/${rideRequest.id}/accept`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      joinRide(rideRequest.id);
+      setRideRequest(null);
+      Alert.alert('Course acceptée ✅', 'Rendez-vous au point de prise en charge.');
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Course non disponible';
+      Alert.alert('Impossible d\'accepter', msg);
+      setRideRequest(null);
+    } finally {
+      setAcceptingRide(false);
+    }
   };
 
-  const refuseRide = () => setRideRequest(null);
+  // ── Refuser une course ───────────────────────────────────────
+  const refuseRide = () => {
+    if (rideRequest) sendRideResponse(rideRequest.id, false);
+    setRideRequest(null);
+  };
 
   const firstName = driver?.firstName || 'Chauffeur';
   const hour = new Date().getHours();
@@ -116,13 +209,11 @@ export default function DriverHomeScreen() {
       >
         {location && (
           <>
-            {/* Driver dot */}
             <Marker coordinate={location}>
               <View style={styles.driverDot}>
                 <View style={styles.driverDotInner} />
               </View>
             </Marker>
-            {/* Availability zone circle */}
             {isOnline && (
               <Circle
                 center={location}
@@ -139,8 +230,13 @@ export default function DriverHomeScreen() {
       {/* Top header */}
       <View style={styles.topBar}>
         <View style={styles.statusPill}>
-          <View style={[styles.statusDot, { backgroundColor: isOnline ? COLORS.online : COLORS.offline }]} />
-          <Text style={styles.statusLabel}>{isOnline ? 'En ligne' : 'Hors ligne'}</Text>
+          <View style={[
+            styles.statusDot,
+            { backgroundColor: socketReady ? (isOnline ? COLORS.online : COLORS.offline) : '#888' }
+          ]} />
+          <Text style={styles.statusLabel}>
+            {!socketReady ? 'Connexion…' : isOnline ? 'En ligne' : 'Hors ligne'}
+          </Text>
         </View>
 
         <View style={styles.earningsBubble}>
@@ -185,7 +281,6 @@ export default function DriverHomeScreen() {
           </>
         )}
 
-        {/* Online/Offline toggle */}
         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
           <TouchableOpacity
             style={[styles.toggleBtn, isOnline ? styles.toggleBtnOnline : styles.toggleBtnOffline]}
@@ -193,14 +288,22 @@ export default function DriverHomeScreen() {
             activeOpacity={0.85}
             disabled={toggling}
           >
-            <Ionicons
-              name={isOnline ? 'pause-circle' : 'play-circle'}
-              size={26}
-              color={isOnline ? COLORS.bg : COLORS.primary}
-            />
-            <Text style={[styles.toggleText, { color: isOnline ? COLORS.bg : COLORS.primary }]}>
-              {isOnline ? 'Passer hors ligne' : 'Aller en ligne'}
-            </Text>
+            {toggling ? (
+              <Text style={[styles.toggleText, { color: isOnline ? COLORS.bg : COLORS.primary }]}>
+                Chargement…
+              </Text>
+            ) : (
+              <>
+                <Ionicons
+                  name={isOnline ? 'pause-circle' : 'play-circle'}
+                  size={26}
+                  color={isOnline ? COLORS.bg : COLORS.primary}
+                />
+                <Text style={[styles.toggleText, { color: isOnline ? COLORS.bg : COLORS.primary }]}>
+                  {isOnline ? 'Passer hors ligne' : 'Aller en ligne'}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -228,8 +331,12 @@ export default function DriverHomeScreen() {
             <TouchableOpacity style={styles.btnRefuse} onPress={refuseRide}>
               <Text style={styles.btnRefuseText}>Refuser</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnAccept} onPress={acceptRide}>
-              <Text style={styles.btnAcceptText}>Accepter</Text>
+            <TouchableOpacity
+              style={[styles.btnAccept, acceptingRide && { opacity: 0.6 }]}
+              onPress={acceptRide}
+              disabled={acceptingRide}
+            >
+              <Text style={styles.btnAcceptText}>{acceptingRide ? 'Confirmation…' : 'Accepter'}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -298,15 +405,10 @@ const styles = StyleSheet.create({
     gap: 10, borderRadius: RADIUS.xl, paddingVertical: 16,
     borderWidth: 2,
   },
-  toggleBtnOffline: {
-    backgroundColor: 'transparent', borderColor: COLORS.primary,
-  },
-  toggleBtnOnline: {
-    backgroundColor: COLORS.primary, borderColor: COLORS.primary,
-  },
+  toggleBtnOffline: { backgroundColor: 'transparent', borderColor: COLORS.primary },
+  toggleBtnOnline: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   toggleText: { fontSize: 17, fontWeight: '800' },
 
-  // Driver dot on map
   driverDot: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: 'rgba(46,204,113,0.2)',
@@ -318,7 +420,6 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#fff',
   },
 
-  // Ride request
   rideRequest: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: COLORS.bgCard, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl,
@@ -352,7 +453,6 @@ const styles = StyleSheet.create({
   btnAcceptText: { color: COLORS.bg, fontWeight: '800', fontSize: 15 },
 });
 
-// Dark map style (Google Maps style JSON)
 const darkMapStyle = [
   { elementType: 'geometry', stylers: [{ color: '#0f0f1a' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#8693a5' }] },

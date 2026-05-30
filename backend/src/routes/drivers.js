@@ -135,9 +135,11 @@ router.put('/availability', authenticate, requireDriver,
   body('availability').isIn(['online', 'offline']),
   async (req, res) => {
     try {
+      const { availability } = req.body;
+
       const driver = await prisma.driver.update({
         where: { id: req.user.driver.id },
-        data: { availability: req.body.availability }
+        data: { availability }
       });
 
       const io = req.app.get('io');
@@ -146,8 +148,63 @@ router.put('/availability', authenticate, requireDriver,
         availability: driver.availability
       });
 
+      // Si le chauffeur passe EN LIGNE et a une position connue,
+      // lui envoyer les courses en attente à proximité (max 10 min, rayon 5 km)
+      if (availability === 'online' && driver.currentLat && driver.currentLng) {
+        const pendingRides = await prisma.$queryRaw`
+          SELECT r.id, r.pickup_address, r.pickup_lat, r.pickup_lng,
+                 r.dropoff_address, r.dropoff_lat, r.dropoff_lng,
+                 r.estimated_price, r.distance_km, r.duration_minutes,
+                 r.payment_method, r.created_at,
+                 u.id as client_id, u.first_name, u.last_name, u.phone, u.avatar_url
+          FROM rides r
+          JOIN users u ON u.id = r.client_id
+          WHERE r.status = 'searching'
+            AND r.created_at > NOW() - INTERVAL '10 minutes'
+            AND (
+              6371 * acos(
+                cos(radians(${driver.currentLat})) * cos(radians(r.pickup_lat)) *
+                cos(radians(r.pickup_lng) - radians(${driver.currentLng})) +
+                sin(radians(${driver.currentLat})) * sin(radians(r.pickup_lat))
+              )
+            ) <= 5
+          ORDER BY r.created_at DESC
+          LIMIT 3
+        `;
+
+        if (io && pendingRides.length > 0) {
+          for (const ride of pendingRides) {
+            io.sendToUser(req.user.id, 'new_ride_request', {
+              ride: {
+                id: ride.id,
+                pickupAddress: ride.pickup_address,
+                pickupLat: parseFloat(ride.pickup_lat),
+                pickupLng: parseFloat(ride.pickup_lng),
+                dropoffAddress: ride.dropoff_address,
+                dropoffLat: parseFloat(ride.dropoff_lat),
+                dropoffLng: parseFloat(ride.dropoff_lng),
+                estimatedPrice: parseFloat(ride.estimated_price),
+                distanceKm: parseFloat(ride.distance_km),
+                durationMinutes: ride.duration_minutes,
+                paymentMethod: ride.payment_method,
+                client: {
+                  id: ride.client_id,
+                  firstName: ride.first_name,
+                  lastName: ride.last_name,
+                  phone: ride.phone,
+                  avatarUrl: ride.avatar_url,
+                },
+                createdAt: ride.created_at,
+              }
+            });
+          }
+          console.log(`[AVAILABILITY] Chauffeur ${driver.id} en ligne → ${pendingRides.length} course(s) en attente envoyées`);
+        }
+      }
+
       res.json({ success: true, driver });
     } catch (err) {
+      console.error('[AVAILABILITY]', err);
       res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }

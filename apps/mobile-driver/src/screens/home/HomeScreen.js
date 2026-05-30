@@ -161,6 +161,20 @@ export default function DriverHomeScreen() {
     const nextOnline = !isOnline;
 
     try {
+      // Si on passe en ligne, s'assurer que la position est envoyée d'abord
+      if (nextOnline) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const { latitude, longitude, speed, heading } = loc.coords;
+          setLocation({ latitude, longitude });
+          await axios.put(
+            `${API_URL}/api/drivers/location`,
+            { lat: latitude, lng: longitude, speed: speed || 0, heading: heading || 0 },
+            { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+          ).catch(() => {}); // Non bloquant
+        } catch {}
+      }
+
       await axios.put(
         `${API_URL}/api/drivers/availability`,
         { availability: nextOnline ? 'online' : 'offline' },

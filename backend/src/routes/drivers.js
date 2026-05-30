@@ -173,8 +173,11 @@ router.put('/availability', authenticate, requireDriver,
         `;
 
         if (io && pendingRides.length > 0) {
+          // Délai de 500ms pour laisser le temps à l'app de traiter la réponse HTTP
+          // et passer isOnline=true avant de recevoir l'événement socket
+          setTimeout(() => {
           for (const ride of pendingRides) {
-            io.sendToUser(req.user.id, 'new_ride_request', {
+            io.to(`user_${req.user.id}`).emit('new_ride_request', {
               ride: {
                 id: ride.id,
                 pickupAddress: ride.pickup_address,
@@ -199,6 +202,7 @@ router.put('/availability', authenticate, requireDriver,
             });
           }
           console.log(`[AVAILABILITY] Chauffeur ${driver.id} en ligne → ${pendingRides.length} course(s) en attente envoyées`);
+          }, 500); // fin setTimeout
         }
       }
 

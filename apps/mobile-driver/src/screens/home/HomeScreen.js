@@ -81,7 +81,7 @@ export default function DriverHomeScreen() {
     const sock = connectSocket(token);
 
     unsubRideRef.current = onRideRequest((data) => {
-      if (!useDriverStatusStore.getState().isOnline) return;
+      // Pas de garde isOnline ici — le backend n'envoie des courses qu'aux chauffeurs en ligne
       setRideRequest({
         id: data.ride.id,
         from: data.ride.pickupAddress,

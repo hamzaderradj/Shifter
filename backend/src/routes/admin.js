@@ -351,6 +351,52 @@ router.get('/ratings/suspicious', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── GET /admin/support ────────────────────────────────────────
+router.get('/support', ...adminOnly, async (req, res) => {
+  try {
+    const { status = 'open', page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const where = status === 'all' ? {} : { status };
+
+    const [tickets, total] = await Promise.all([
+      prisma.supportTicket.findMany({
+        where,
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, phone: true, role: true } },
+          ride: { select: { id: true, pickupAddress: true, dropoffAddress: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.supportTicket.count({ where })
+    ]);
+
+    res.json({ success: true, tickets, pagination: { page: parseInt(page), total, pages: Math.ceil(total / parseInt(limit)) } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── PUT /admin/support/:id ────────────────────────────────────
+router.put('/support/:id', ...adminOnly, async (req, res) => {
+  try {
+    const { status, adminReply } = req.body;
+    const data = { status };
+    if (adminReply !== undefined) {
+      data.adminReply = adminReply;
+      data.repliedAt = new Date();
+    }
+    const ticket = await prisma.supportTicket.update({
+      where: { id: req.params.id },
+      data
+    });
+    res.json({ success: true, ticket });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // ── POST /admin/reset-test-data ───────────────────────────────
 // Supprime toutes les courses et remet les compteurs à zéro
 // À n'utiliser qu'en phase de développement

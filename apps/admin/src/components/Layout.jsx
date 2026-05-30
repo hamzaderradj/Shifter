@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, MapPin, BarChart3,
-  AlertTriangle, LogOut, Menu, X, Bike, Bell, ShieldAlert
+  AlertTriangle, LogOut, Menu, X, Bike, Bell, ShieldAlert, MessageSquare
 } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/analytics', icon: BarChart3, label: 'Analytiques' },
   { to: '/sos', icon: AlertTriangle, label: 'Alertes SOS', danger: true },
   { to: '/moderation', icon: ShieldAlert, label: 'Modération', purple: true },
+  { to: '/support', icon: MessageSquare, label: 'Support' },
 ];
 
 export default function Layout() {

@@ -45,6 +45,8 @@ export const adminAPI = {
   updateReport: (id, data) => api.put(`/admin/reports/${id}`, data),
   suspendUser: (id, suspend) => api.put(`/admin/users/${id}/suspend`, { suspend }),
   getSuspiciousRatings: () => api.get('/admin/ratings/suspicious'),
+  getTickets: (params) => api.get('/admin/support', { params }),
+  updateTicket: (id, data) => api.put(`/admin/support/${id}`, data),
   resetTestData: () => api.post('/admin/reset-test-data'),
 };
 

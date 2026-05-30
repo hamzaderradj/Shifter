@@ -11,6 +11,7 @@ import RidesPage from './pages/Rides';
 import AnalyticsPage from './pages/Analytics';
 import SosAlertsPage from './pages/SosAlerts';
 import ModerationPage from './pages/Moderation';
+import SupportPage from './pages/Support';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="sos" element={<SosAlertsPage />} />
           <Route path="moderation" element={<ModerationPage />} />
+          <Route path="support" element={<SupportPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, Dimensions, Animated, Alert,
+  StatusBar, Dimensions, Animated, Alert, Vibration,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +36,8 @@ export default function DriverHomeScreen() {
   const [location, setLocation] = useState(null);
   const [toggling, setToggling] = useState(false);
   const [acceptingRide, setAcceptingRide] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const timerRef = useRef(null);
 
   // ── Rafraîchir le statut chauffeur + gains + courses en attente à chaque focus ──────────
   useFocusEffect(
@@ -189,6 +191,38 @@ export default function DriverHomeScreen() {
     }).start();
   }, [rideRequest]);
 
+  // ── Timer 30s + vibration ────────────────────────────────────
+  useEffect(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (rideRequest) {
+      setTimeLeft(30);
+      // Vibration pattern : 3 impulsions courtes
+      Vibration.vibrate([0, 200, 100, 200, 100, 200]);
+
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+            // Refus automatique à 0
+            sendRideResponse(rideRequest.id, false);
+            setRideRequest(null);
+            return 30;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [rideRequest?.id]);
+
   // ── Toggle disponibilité via HTTP ────────────────────────────
   const toggleOnline = async () => {
     if (toggling) return;
@@ -249,6 +283,7 @@ export default function DriverHomeScreen() {
   // ── Accepter une course ──────────────────────────────────────
   const acceptRide = async () => {
     if (!rideRequest || acceptingRide) return;
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     setAcceptingRide(true);
     const ride = rideRequest;
     try {
@@ -259,7 +294,6 @@ export default function DriverHomeScreen() {
       );
       joinRide(ride.id);
       setRideRequest(null);
-      // Naviguer vers l'écran de course active
       navigation.navigate('ActiveRide', { rideId: ride.id, ride });
     } catch (err) {
       const msg = err.response?.data?.message || 'Course non disponible';
@@ -271,6 +305,7 @@ export default function DriverHomeScreen() {
   };
 
   const refuseRide = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (rideRequest) sendRideResponse(rideRequest.id, false);
     setRideRequest(null);
   };
@@ -452,9 +487,23 @@ export default function DriverHomeScreen() {
             <View style={[styles.rideDot, { backgroundColor: COLORS.primary }]} />
             <Text style={styles.rideAddr}>{rideRequest.to}</Text>
           </View>
-          <Text style={styles.rideDistance}>
-            {rideRequest.distanceKm} km · ~{rideRequest.estimatedMin} min
-          </Text>
+          <View style={styles.rideInfoRow}>
+            <Text style={styles.rideDistance}>
+              {rideRequest.distanceKm} km · ~{rideRequest.estimatedMin} min
+            </Text>
+            <View style={[styles.timerBadge, timeLeft <= 10 && styles.timerBadgeUrgent]}>
+              <Text style={[styles.timerText, timeLeft <= 10 && styles.timerTextUrgent]}>
+                {timeLeft}s
+              </Text>
+            </View>
+          </View>
+          <View style={styles.timerBar}>
+            <View style={[
+              styles.timerBarFill,
+              { width: `${(timeLeft / 30) * 100}%` },
+              timeLeft <= 10 && styles.timerBarFillUrgent
+            ]} />
+          </View>
           <View style={styles.rideBtns}>
             <TouchableOpacity style={styles.btnRefuse} onPress={refuseRide}>
               <Text style={styles.btnRefuseText}>Refuser</Text>
@@ -564,7 +613,22 @@ const styles = StyleSheet.create({
   rideRoute: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 2 },
   rideDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.accent },
   rideAddr: { fontSize: 14, color: COLORS.text, flex: 1, fontWeight: '500' },
-  rideDistance: { fontSize: 12, color: COLORS.textSub, marginTop: 10, marginBottom: 16 },
+  rideInfoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 8 },
+  rideDistance: { fontSize: 12, color: COLORS.textSub },
+  timerBadge: {
+    backgroundColor: COLORS.bgInput, borderRadius: RADIUS.full,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  timerBadgeUrgent: { backgroundColor: '#3d1a1a', borderColor: '#FF4B4B' },
+  timerText: { fontSize: 13, fontWeight: '800', color: COLORS.textSub },
+  timerTextUrgent: { color: '#FF4B4B' },
+  timerBar: {
+    height: 3, backgroundColor: COLORS.bgInput,
+    borderRadius: 2, marginBottom: 14, overflow: 'hidden',
+  },
+  timerBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
+  timerBarFillUrgent: { backgroundColor: '#FF4B4B' },
   rideBtns: { flexDirection: 'row', gap: 12 },
   btnRefuse: {
     flex: 1, paddingVertical: 14, borderRadius: RADIUS.lg,

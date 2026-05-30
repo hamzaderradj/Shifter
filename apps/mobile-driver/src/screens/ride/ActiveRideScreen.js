@@ -136,10 +136,24 @@ export default function ActiveRideScreen({ navigation, route }) {
     }
 
     if (step.nextStatus === 'completed') {
-      Alert.alert('Terminer la course ?', "Confirmez l'arrivée à destination.", [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Confirmer', onPress: () => updateStatus('completed') },
-      ]);
+      // Si paiement cash → confirmation de réception avant de terminer
+      if (ride.paymentMethod === 'cash') {
+        const amount = parseFloat(ride.finalPrice || ride.estimatedPrice || 0);
+        const net = (amount * 0.8).toFixed(2);
+        Alert.alert(
+          '💵 Confirmation de paiement',
+          `Le client doit vous régler :\n\n💰 ${amount.toFixed(2)} € en espèces\n\nVotre part : ${net} €\n\nConfirmez que vous avez bien reçu le cash.`,
+          [
+            { text: 'Pas encore', style: 'cancel' },
+            { text: '✅ Cash reçu, terminer', onPress: () => updateStatus('completed') },
+          ]
+        );
+      } else {
+        Alert.alert('Terminer la course ?', "Confirmez l'arrivée à destination.", [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Confirmer', onPress: () => updateStatus('completed') },
+        ]);
+      }
     } else {
       updateStatus(step.nextStatus);
     }
@@ -290,6 +304,16 @@ export default function ActiveRideScreen({ navigation, route }) {
             <Text style={styles.clientMeta}>
               {ride?.distanceKm ? `${parseFloat(ride.distanceKm).toFixed(1)} km` : '—'} · {parseFloat(ride?.estimatedPrice || 0).toFixed(2)} €
             </Text>
+            <View style={styles.paymentBadge}>
+              <Ionicons
+                name={ride?.paymentMethod === 'cash' ? 'cash-outline' : 'phone-portrait-outline'}
+                size={12}
+                color={ride?.paymentMethod === 'cash' ? '#10B981' : COLORS.primary}
+              />
+              <Text style={[styles.paymentBadgeText, { color: ride?.paymentMethod === 'cash' ? '#10B981' : COLORS.primary }]}>
+                {ride?.paymentMethod === 'cash' ? 'Espèces' : 'Mobile Money'}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity style={styles.callBtn} onPress={callClient} activeOpacity={0.8}>
             <Ionicons name="call" size={22} color={COLORS.primary} />
@@ -395,6 +419,13 @@ const styles = StyleSheet.create({
   clientInfo: { flex: 1 },
   clientName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   clientMeta: { fontSize: 12, color: COLORS.textSub, marginTop: 2 },
+  paymentBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 4, alignSelf: 'flex-start',
+    backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2,
+  },
+  paymentBadgeText: { fontSize: 11, fontWeight: '700' },
   callBtn: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',

@@ -263,6 +263,94 @@ router.get('/sos-alerts', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── GET /admin/reports ────────────────────────────────────────
+router.get('/reports', ...adminOnly, async (req, res) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const where = status === 'all' ? {} : { status };
+
+    const [reports, total] = await Promise.all([
+      prisma.report.findMany({
+        where,
+        include: {
+          reporter: { select: { id: true, firstName: true, lastName: true, phone: true, role: true } },
+          reportedUser: { select: { id: true, firstName: true, lastName: true, phone: true, role: true } },
+          ride: { select: { id: true, pickupAddress: true, dropoffAddress: true, createdAt: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.report.count({ where })
+    ]);
+
+    res.json({ success: true, reports, pagination: { page: parseInt(page), total, pages: Math.ceil(total / parseInt(limit)) } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── PUT /admin/reports/:id ────────────────────────────────────
+router.put('/reports/:id', ...adminOnly, async (req, res) => {
+  try {
+    const { status, adminNote } = req.body;
+    const report = await prisma.report.update({
+      where: { id: req.params.id },
+      data: { status, adminNote: adminNote || null }
+    });
+    res.json({ success: true, report });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── PUT /admin/users/:id/suspend ──────────────────────────────
+router.put('/users/:id/suspend', ...adminOnly, async (req, res) => {
+  try {
+    const { suspend = true } = req.body;
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { isActive: !suspend }
+    });
+    // Si c'est un chauffeur, suspendre aussi son profil driver
+    await prisma.driver.updateMany({
+      where: { userId: req.params.id },
+      data: { status: suspend ? 'suspended' : 'approved' }
+    }).catch(() => {});
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── GET /admin/ratings/suspicious ────────────────────────────
+router.get('/ratings/suspicious', ...adminOnly, async (req, res) => {
+  try {
+    // Avis suspects : note <= 2 avec commentaire
+    const ratings = await prisma.rating.findMany({
+      where: {
+        score: { lte: 2 },
+        comment: { not: null }
+      },
+      include: {
+        ride: {
+          select: {
+            id: true, pickupAddress: true, dropoffAddress: true, createdAt: true,
+            client: { select: { id: true, firstName: true, lastName: true, phone: true } },
+            driver: { include: { user: { select: { id: true, firstName: true, lastName: true, phone: true } } } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    res.json({ success: true, ratings });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // ── POST /admin/reset-test-data ───────────────────────────────
 // Supprime toutes les courses et remet les compteurs à zéro
 // À n'utiliser qu'en phase de développement

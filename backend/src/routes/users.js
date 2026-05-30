@@ -103,4 +103,33 @@ router.post('/support', authenticate,
   }
 );
 
+// ── POST /users/report ────────────────────────────────────────
+router.post('/report', authenticate,
+  body('reportedUserId').notEmpty(),
+  body('reason').isIn(['inappropriate_behavior', 'fraud', 'safety_concern', 'bad_rating', 'other']),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+    try {
+      const { reportedUserId, rideId, reason, description } = req.body;
+      if (reportedUserId === req.user.id) {
+        return res.status(400).json({ success: false, message: 'Vous ne pouvez pas vous signaler vous-même' });
+      }
+      const report = await prisma.report.create({
+        data: {
+          reporterId: req.user.id,
+          reportedUserId,
+          rideId: rideId || null,
+          reason,
+          description: description?.trim() || null
+        }
+      });
+      res.status(201).json({ success: true, report });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  }
+);
+
 module.exports = router;

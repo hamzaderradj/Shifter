@@ -41,6 +41,10 @@ export const adminAPI = {
   getRides: (params) => api.get('/admin/rides', { params }),
   getAnalytics: (days) => api.get(`/admin/analytics?days=${days}`),
   getSosAlerts: () => api.get('/admin/sos-alerts'),
+  getReports: (params) => api.get('/admin/reports', { params }),
+  updateReport: (id, data) => api.put(`/admin/reports/${id}`, data),
+  suspendUser: (id, suspend) => api.put(`/admin/users/${id}/suspend`, { suspend }),
+  getSuspiciousRatings: () => api.get('/admin/ratings/suspicious'),
   resetTestData: () => api.post('/admin/reset-test-data'),
 };
 

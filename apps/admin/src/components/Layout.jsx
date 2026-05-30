@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, MapPin, BarChart3,
-  AlertTriangle, LogOut, Menu, X, Bike, Bell
+  AlertTriangle, LogOut, Menu, X, Bike, Bell, ShieldAlert
 } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 
+// eslint-disable-next-line no-unused-vars
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/drivers', icon: Bike, label: 'Chauffeurs' },
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/rides', icon: Car, label: 'Courses' },
   { to: '/analytics', icon: BarChart3, label: 'Analytiques' },
   { to: '/sos', icon: AlertTriangle, label: 'Alertes SOS', danger: true },
+  { to: '/moderation', icon: ShieldAlert, label: 'Modération', purple: true },
 ];
 
 export default function Layout() {
@@ -41,7 +43,7 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(({ to, icon: Icon, label, exact, danger }) => (
+          {NAV_ITEMS.map(({ to, icon: Icon, label, exact, danger, purple }) => (
             <NavLink
               key={to}
               to={to}
@@ -52,6 +54,8 @@ export default function Layout() {
                   ? 'bg-primary text-white shadow-lg shadow-primary/30'
                   : danger
                   ? 'text-red-400 hover:bg-red-500/10'
+                  : purple
+                  ? 'text-purple-400 hover:bg-purple-500/10'
                   : 'text-white/60 hover:bg-white/10 hover:text-white'
                 }`
               }

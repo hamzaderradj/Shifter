@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, Linking, StatusBar, ActivityIndicator
+  Alert, Linking, StatusBar, ActivityIndicator, Modal
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -78,6 +78,10 @@ export default function ActiveRideScreen({ navigation, route }) {
   const [ride, setRide] = useState(initialRide || null);
   const [loading, setLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingScore, setRatingScore] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const completedRideRef = useRef(null);
 
   // Charger les données fraîches de la course
   useEffect(() => {
@@ -180,17 +184,9 @@ export default function ActiveRideScreen({ navigation, route }) {
           });
         } catch {}
 
-        const amount = parseFloat(ride.finalPrice || ride.estimatedPrice || 0) * 0.8;
-        const ratingVal = ride.rating?.driverRating;
-        const ratingMsg = ratingVal
-          ? `\n⭐ Note reçue : ${ratingVal}/5`
-          : '';
-
-        Alert.alert(
-          '✅ Course terminée !',
-          `Vous avez gagné : ${amount.toFixed(2)} €${ratingMsg}`,
-          [{ text: 'OK', onPress: () => navigation.replace('MainTabs') }]
-        );
+        // Sauvegarder la course pour le modal de notation
+        completedRideRef.current = { ...ride, status: 'completed' };
+        setShowRatingModal(true);
       }
     } catch {
       Alert.alert('Erreur', 'Impossible de mettre à jour le statut. Réessayez.');
@@ -229,9 +225,79 @@ export default function ActiveRideScreen({ navigation, route }) {
     tooFar = dist > 1;
   }
 
+  const submitRating = async (score) => {
+    if (!completedRideRef.current || ratingSubmitting) return;
+    setRatingSubmitting(true);
+    try {
+      await ridesAPI.rate(completedRideRef.current.id, { score });
+    } catch {} finally {
+      setRatingSubmitting(false);
+      setShowRatingModal(false);
+      navigation.replace('MainTabs');
+    }
+  };
+
+  const skipRating = () => {
+    setShowRatingModal(false);
+    navigation.replace('MainTabs');
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+
+      {/* ── Modal notation client ── */}
+      <Modal visible={showRatingModal} transparent animationType="slide">
+        <View style={styles.ratingOverlay}>
+          <View style={styles.ratingSheet}>
+            <View style={styles.ratingHandle} />
+            <Text style={styles.ratingEmoji}>🏁</Text>
+            <Text style={styles.ratingTitle}>Course terminée !</Text>
+            <Text style={styles.ratingSubtitle}>
+              Comment s'est passé le trajet avec votre client ?
+            </Text>
+
+            {/* Étoiles */}
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map(i => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => setRatingScore(i)}
+                  activeOpacity={0.7}
+                  style={styles.starBtn}
+                >
+                  <Text style={[styles.starIcon, i <= ratingScore && styles.starIconActive]}>
+                    ★
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.ratingHint}>
+              {ratingScore === 0 ? 'Appuyez sur une étoile' :
+               ratingScore === 5 ? 'Excellent client !' :
+               ratingScore >= 4 ? 'Très bon client' :
+               ratingScore >= 3 ? 'Client correct' :
+               ratingScore >= 2 ? 'Quelques soucis' : 'Client difficile'}
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.ratingSubmitBtn, ratingScore === 0 && styles.ratingSubmitBtnDisabled]}
+              onPress={() => submitRating(ratingScore)}
+              disabled={ratingScore === 0 || ratingSubmitting}
+            >
+              {ratingSubmitting
+                ? <ActivityIndicator color={COLORS.bg} />
+                : <Text style={styles.ratingSubmitText}>Envoyer la note</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={skipRating} style={styles.ratingSkipBtn}>
+              <Text style={styles.ratingSkipText}>Passer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Carte ── */}
       <MapView
@@ -426,6 +492,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 2,
   },
   paymentBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  // Modal notation
+  ratingOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  ratingSheet: {
+    backgroundColor: COLORS.bgCard,
+    borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl,
+    padding: 28, paddingBottom: 48, alignItems: 'center',
+    borderTopWidth: 1, borderColor: COLORS.border,
+  },
+  ratingHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border, marginBottom: 20,
+  },
+  ratingEmoji: { fontSize: 48, marginBottom: 8 },
+  ratingTitle: { fontSize: 24, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
+  ratingSubtitle: { fontSize: 14, color: COLORS.textSub, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  starsRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  starBtn: { padding: 4 },
+  starIcon: { fontSize: 44, color: COLORS.border },
+  starIconActive: { color: '#F4C542' },
+  ratingHint: { fontSize: 13, color: COLORS.textSub, marginBottom: 28, height: 20 },
+  ratingSubmitBtn: {
+    width: '100%', paddingVertical: 16, borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.primary, alignItems: 'center', marginBottom: 12,
+    ...SHADOW.green,
+  },
+  ratingSubmitBtnDisabled: { opacity: 0.4 },
+  ratingSubmitText: { color: COLORS.bg, fontWeight: '800', fontSize: 16 },
+  ratingSkipBtn: { paddingVertical: 8 },
+  ratingSkipText: { color: COLORS.textSub, fontSize: 14, fontWeight: '600' },
   callBtn: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',

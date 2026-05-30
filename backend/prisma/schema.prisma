@@ -203,7 +203,7 @@ model Ride {
 
   client   User     @relation("ClientRides", fields: [clientId], references: [id])
   driver   Driver?  @relation(fields: [driverId], references: [id])
-  rating          Rating?
+  ratings         Rating[]
   tracking        RideTracking[]
   reports         Report[]
   supportTickets  SupportTicket[]
@@ -213,7 +213,7 @@ model Ride {
 
 model Rating {
   id        String   @id @default(uuid())
-  rideId    String   @unique @map("ride_id")
+  rideId    String   @map("ride_id")
   fromUser  String   @map("from_user")
   toUser    String   @map("to_user")
   score     Int
@@ -224,6 +224,7 @@ model Rating {
   rater    User @relation("RatingFrom", fields: [fromUser], references: [id])
   rated    User @relation("RatingTo", fields: [toUser], references: [id])
 
+  @@unique([rideId, fromUser])
   @@map("ratings")
 }
 

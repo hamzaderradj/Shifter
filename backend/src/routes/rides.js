@@ -209,7 +209,7 @@ router.get('/history', authenticate, async (req, res) => {
         include: {
           driver: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } },
           client: { select: { firstName: true, lastName: true, avatarUrl: true } },
-          rating: true
+          ratings: true
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -370,6 +370,7 @@ router.post('/:id/status', authenticate, async (req, res) => {
 });
 
 // ── POST /rides/:id/rate ─────────────────────────────────────
+// Utilisable par le client ET le chauffeur (un seul avis par personne par course)
 router.post('/:id/rate', authenticate,
   body('score').isInt({ min: 1, max: 5 }),
   body('comment').optional().trim().isLength({ max: 500 }),
@@ -380,31 +381,55 @@ router.post('/:id/rate', authenticate,
     try {
       const ride = await prisma.ride.findUnique({
         where: { id: req.params.id },
-        include: { driver: true, rating: true }
+        include: { driver: { include: { user: true } }, ratings: true }
       });
 
       if (!ride || ride.status !== 'completed') {
         return res.status(400).json({ success: false, message: 'Course non terminée' });
       }
-      if (ride.rating) {
-        return res.status(409).json({ success: false, message: 'Déjà noté' });
-      }
-      if (ride.clientId !== req.user.id) {
+
+      const isClient = ride.clientId === req.user.id;
+      const isDriver = ride.driver?.userId === req.user.id;
+
+      if (!isClient && !isDriver) {
         return res.status(403).json({ success: false, message: 'Accès refusé' });
       }
+
+      // Vérifier si cet utilisateur a déjà noté
+      const alreadyRated = ride.ratings?.some(r => r.fromUser === req.user.id);
+      if (alreadyRated) {
+        return res.status(409).json({ success: false, message: 'Vous avez déjà noté cette course' });
+      }
+
+      // Le client note le chauffeur, le chauffeur note le client
+      const toUserId = isClient ? ride.driver.userId : ride.clientId;
 
       const rating = await prisma.rating.create({
         data: {
           rideId: ride.id,
           fromUser: req.user.id,
-          toUser: ride.driver.userId,
+          toUser: toUserId,
           score: req.body.score,
-          comment: req.body.comment
+          comment: req.body.comment || null
         }
       });
 
+      // Mettre à jour la note moyenne du conducteur si c'est le client qui note
+      if (isClient && ride.driver) {
+        const avg = await prisma.rating.aggregate({
+          where: { toUser: ride.driver.userId },
+          _avg: { score: true },
+          _count: true,
+        });
+        await prisma.driver.update({
+          where: { id: ride.driver.id },
+          data: { rating: avg._avg.score || 5 }
+        });
+      }
+
       res.json({ success: true, rating });
     } catch (err) {
+      console.error('rate error:', err);
       res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }

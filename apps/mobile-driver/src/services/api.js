@@ -72,6 +72,7 @@ export const ridesAPI = {
   updateStatus: (id, status) => api.post(`/rides/${id}/status`, { status }),
   getHistory: (page = 1) => api.get(`/rides/history?page=${page}`),
   getActive: () => api.get('/rides/active'),
+  rate: (id, data) => api.post(`/rides/${id}/rate`, data),
 };
 
 export default api;

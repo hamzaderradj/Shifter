@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Linking, Alert,
-  Animated, StatusBar
+  Animated, StatusBar, Share
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -117,6 +117,17 @@ export default function TrackingScreen({ navigation, route }) {
       }
     };
   }, [rideId]); // dépend uniquement de rideId — stable pendant toute la vie de l'écran
+
+  const handleShare = async () => {
+    const trackUrl = `https://shifter-bmbf.onrender.com/track/${rideId}`;
+    try {
+      await Share.share({
+        message: `🛵 Suis ma course Shifter en direct !\n${trackUrl}`,
+        url: trackUrl,
+        title: 'Suivi de course Shifter',
+      });
+    } catch {}
+  };
 
   const handleCancel = () => {
     Alert.alert('Annuler la course', 'Êtes-vous sûr ?', [
@@ -258,6 +269,13 @@ export default function TrackingScreen({ navigation, route }) {
 
         {/* Actions */}
         <View style={styles.actions}>
+          {/* Bouton partage — visible dès qu'un chauffeur est assigné */}
+          {['accepted', 'driver_en_route', 'arrived', 'in_progress'].includes(status) && (
+            <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+              <Ionicons name="share-social-outline" size={18} color={COLORS.primary} />
+              <Text style={styles.shareBtnText}>Partager</Text>
+            </TouchableOpacity>
+          )}
           {['searching', 'accepted', 'driver_en_route'].includes(status) && (
             <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
               <Ionicons name="close" size={18} color={COLORS.error} />
@@ -319,6 +337,12 @@ const styles = StyleSheet.create({
   priceText: { color: COLORS.gray[600], fontSize: SIZES.medium },
   priceValue: { fontWeight: '700', color: COLORS.secondary },
   actions: { flexDirection: 'row', gap: SPACING.sm },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.sm, height: 48, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.md,
+    borderWidth: 1.5, borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight,
+  },
+  shareBtnText: { color: COLORS.primary, fontWeight: '600' },
   cancelBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: SPACING.sm, height: 48, borderRadius: RADIUS.md,

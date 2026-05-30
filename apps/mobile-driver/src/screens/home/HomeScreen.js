@@ -10,7 +10,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useDriverAuthStore, useDriverStatusStore, useEarningsStore } from '../../store';
-import { driverAPI } from '../../services/api';
+import { driverAPI, ridesAPI } from '../../services/api';
 import { COLORS, RADIUS, SHADOW } from '../../utils/theme';
 import {
   connectSocket, disconnectSocket,
@@ -37,17 +37,22 @@ export default function DriverHomeScreen() {
   const [toggling, setToggling] = useState(false);
   const [acceptingRide, setAcceptingRide] = useState(false);
 
-  // ── Rafraîchir le statut chauffeur + gains du jour à chaque focus ──────────
+  // ── Rafraîchir le statut chauffeur + gains + courses en attente à chaque focus ──────────
   useFocusEffect(
     useCallback(() => {
       (async () => {
         try {
-          const [meRes, earningsRes] = await Promise.allSettled([
+          const [meRes, earningsRes, requestsRes] = await Promise.allSettled([
             driverAPI.getMe(),
             driverAPI.getEarnings('today'),
+            driverAPI.getRequests(),
           ]);
           if (meRes.status === 'fulfilled' && meRes.value.data.driver) {
-            updateDriver(meRes.value.data.driver);
+            const freshDriver = meRes.value.data.driver;
+            updateDriver(freshDriver);
+            // Synchroniser isOnline avec la vraie disponibilité en base
+            const reallyOnline = freshDriver.availability === 'online';
+            setOnline(reallyOnline);
           }
           if (earningsRes.status === 'fulfilled') {
             const d = earningsRes.value.data;
@@ -56,6 +61,36 @@ export default function DriverHomeScreen() {
               week: d.netEarnings ?? 0,
               trips: d.totalRides ?? 0,
             });
+          }
+          const driverAvailability = meRes.status === 'fulfilled'
+            ? meRes.value.data.driver?.availability
+            : null;
+
+          // Vérifier s'il y a une course ACTIVE déjà acceptée → naviguer dessus
+          try {
+            const activeRes = await ridesAPI.getActive();
+            const activeRide = activeRes.data.ride;
+            if (activeRide && ['accepted', 'driver_en_route', 'arrived', 'in_progress'].includes(activeRide.status)) {
+              navigation.navigate('ActiveRide', { rideId: activeRide.id });
+              return;
+            }
+          } catch {}
+
+          // Si en ligne et une course en attente (searching) → afficher la bannière
+          if (requestsRes.status === 'fulfilled' && driverAvailability === 'online') {
+            const rides = requestsRes.value.data.rides || [];
+            if (rides.length > 0 && !useDriverStatusStore.getState().rideRequest) {
+              const ride = rides[0];
+              setRideRequest({
+                id: ride.id,
+                from: ride.pickupAddress,
+                to: ride.dropoffAddress,
+                price: ride.estimatedPrice,
+                distanceKm: ride.distanceKm,
+                estimatedMin: ride.durationMinutes,
+                client: ride.client,
+              });
+            }
           }
         } catch {}
       })();

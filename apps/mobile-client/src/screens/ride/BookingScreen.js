@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
   Alert, TextInput, FlatList, KeyboardAvoidingView, Platform,
-  StatusBar, ScrollView, Keyboard, TouchableWithoutFeedback
+  StatusBar, ScrollView, Keyboard, TouchableWithoutFeedback, SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import { ridesAPI } from '../../services/api';
+import { ridesAPI, usersAPI } from '../../services/api';
 import { useMapStore, useRideStore } from '../../store';
+import { COLORS } from '../../utils/theme';
 import { joinRide, initSocket, getSocket } from '../../services/socket';
 
 // ── Calcul de distance (formule Haversine) ──────────────────────
@@ -113,9 +114,17 @@ export default function BookingScreen({ navigation }) {
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [booking, setBooking] = useState(false);
+  const [favorites, setFavorites] = useState([]);
 
   const dropoffRef = useRef(null);
   const debounceRef = useRef(null);
+
+  // Charger les favoris au montage
+  useEffect(() => {
+    usersAPI.getFavorites()
+      .then(({ data }) => setFavorites(data.favorites || []))
+      .catch(() => {});
+  }, []);
 
   // Prix calculé localement (instantané)
   const distance = pickup && dropoff
@@ -323,6 +332,33 @@ export default function BookingScreen({ navigation }) {
       ) : (
         <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
 
+          {/* Favoris — accès rapide aux adresses sauvegardées */}
+          {favorites.length > 0 && !dropoff && (
+            <View style={styles.favSection}>
+              <Text style={styles.favSectionTitle}>Favoris</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.favScroll}>
+                {favorites.map((fav) => (
+                  <TouchableOpacity
+                    key={fav.id}
+                    style={styles.favChip}
+                    onPress={() => {
+                      setDropoffText(fav.address);
+                      setDropoff({ address: fav.address, lat: fav.lat, lng: fav.lng });
+                      Keyboard.dismiss();
+                    }}
+                  >
+                    <Ionicons
+                      name={{ Maison: 'home', Bureau: 'briefcase', Gym: 'fitness', Famille: 'people' }[fav.label] || 'heart'}
+                      size={16}
+                      color={COLORS.primary}
+                    />
+                    <Text style={styles.favChipText}>{fav.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Prix et infos du trajet */}
           {bothSet && price ? (
             <View style={styles.priceCard}>
@@ -455,6 +491,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center',
   },
   suggestText: { flex: 1, fontSize: 14, color: '#111827', lineHeight: 20 },
+
+  // Favoris
+  favSection: { marginBottom: 12 },
+  favSectionTitle: { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', marginBottom: 8 },
+  favScroll: { flexDirection: 'row' },
+  favChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#EFF6FF', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 9,
+    marginRight: 8, borderWidth: 1, borderColor: '#DBEAFE',
+  },
+  favChipText: { fontSize: 13, fontWeight: '600', color: '#1D4ED8' },
 
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
 

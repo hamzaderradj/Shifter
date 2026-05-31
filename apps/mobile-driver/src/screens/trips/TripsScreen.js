@@ -45,8 +45,7 @@ function TripCard({ trip }) {
           </View>
         </View>
         <Text style={[styles.amount, { color: earned > 0 ? COLORS.primary : COLORS.textSub }]}>
-          {earned > 0 ? `+${earned.toFixed(0)}` : '—'}
-          {earned > 0 ? <Text style={styles.amountCurrency}> FCFA</Text> : null}
+          {earned > 0 ? `+${earned.toFixed(2)} €` : '—'}
         </Text>
       </View>
 

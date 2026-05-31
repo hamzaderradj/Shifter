@@ -93,7 +93,7 @@ export default function ProfileScreen() {
 
         {/* Bannière complétion */}
         {!name && (
-          <TouchableOpacity style={styles.setupBanner} onPress={() => soon('Compléter le profil')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.setupBanner} onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.85}>
             <View style={styles.setupIcon}>
               <Ionicons name="shield-checkmark" size={22} color="#3B82F6" />
             </View>
@@ -107,7 +107,7 @@ export default function ProfileScreen() {
 
         {/* Section principale */}
         <View style={styles.section}>
-          <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Prénom, nom, e-mail" onPress={() => soon('Modifier le profil')} />
+          <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Prénom, nom, e-mail" onPress={() => navigation.navigate('EditProfile')} />
           <MenuItem icon="card-outline" label="Paiement" subtitle="Espèces · Mobile Money" onPress={() => soon('Paiement')} />
           <MenuItem icon="notifications-outline" label="Notifications" onPress={() => navigation.navigate('Notifications')} />
           <MenuItem icon="help-circle-outline" label="Support" onPress={() => navigation.navigate('Support')} />

@@ -23,6 +23,7 @@ import ProfileScreen from '../screens/profile/ProfileScreen';
 import NotificationsScreen from '../screens/profile/NotificationsScreen';
 import FavoritesScreen from '../screens/profile/FavoritesScreen';
 import SupportScreen from '../screens/profile/SupportScreen';
+import EditProfileScreen from '../screens/profile/EditProfileScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -88,6 +89,7 @@ function AppStack() {
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
   );
 }

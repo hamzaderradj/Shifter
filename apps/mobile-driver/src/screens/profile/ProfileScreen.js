@@ -4,6 +4,7 @@ import {
   SafeAreaView, StatusBar, ScrollView, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useDriverAuthStore, useEarningsStore } from '../../store';
 import { COLORS, RADIUS } from '../../utils/theme';
 
@@ -25,6 +26,7 @@ const MenuItem = ({ icon, label, subtitle, onPress, danger, value, badge }) => (
 );
 
 export default function DriverProfileScreen() {
+  const navigation = useNavigation();
   const { driver, logout } = useDriverAuthStore();
   const { today, trips } = useEarningsStore();
 
@@ -93,7 +95,7 @@ export default function DriverProfileScreen() {
         {/* Documents section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Compte</Text>
-          <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Nom, photo" onPress={() => soon('Modifier le profil')} />
+          <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Nom, e-mail" onPress={() => navigation.navigate('EditProfile')} />
           <MenuItem icon="document-text-outline" label="Documents" subtitle="Permis, assurance, carte grise" onPress={() => soon('Documents')} badge="✓" />
           <MenuItem icon="card-outline" label="Paiement" subtitle="Virement bancaire" onPress={() => soon('Paiement')} />
         </View>

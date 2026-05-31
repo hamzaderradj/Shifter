@@ -96,7 +96,7 @@ export default function DriverProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Compte</Text>
           <MenuItem icon="person-outline" label="Modifier le profil" subtitle="Nom, e-mail" onPress={() => navigation.navigate('EditProfile')} />
-          <MenuItem icon="document-text-outline" label="Documents" subtitle="Permis, assurance, carte grise" onPress={() => soon('Documents')} badge="✓" />
+          <MenuItem icon="document-text-outline" label="Documents" subtitle="Permis, assurance, carte grise" onPress={() => navigation.navigate('Documents')} />
           <MenuItem icon="card-outline" label="Paiement" subtitle="Virement bancaire" onPress={() => soon('Paiement')} />
         </View>
 

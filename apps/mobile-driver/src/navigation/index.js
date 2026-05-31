@@ -21,6 +21,7 @@ import DriverProfileScreen from '../screens/profile/ProfileScreen';
 import RegistrationScreen from '../screens/profile/RegistrationScreen';
 import ActiveRideScreen from '../screens/ride/ActiveRideScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
+import DocumentsScreen from '../screens/profile/DocumentsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -117,6 +118,7 @@ function AppStack() {
       <Stack.Screen name="Registration" component={RegistrationScreen} />
       <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="Documents" component={DocumentsScreen} />
     </Stack.Navigator>
   );
 }

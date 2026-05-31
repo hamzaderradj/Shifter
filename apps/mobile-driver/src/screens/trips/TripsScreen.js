@@ -20,7 +20,9 @@ function TripCard({ trip }) {
   const earned = trip.status === 'completed'
     ? (parseFloat(trip.finalPrice || trip.estimatedPrice || 0) * 0.8)
     : 0;
-  const rating = trip.rating?.driverRating ?? null;
+  const rating = Array.isArray(trip.ratings) && trip.ratings.length > 0
+    ? trip.ratings[0].score
+    : null;
 
   const dateStr = trip.completedAt || trip.createdAt
     ? new Date(trip.completedAt || trip.createdAt).toLocaleDateString('fr-FR', {
@@ -113,7 +115,8 @@ export default function TripsScreen() {
   const completedCount = rides.filter((r) => r.status === 'completed').length;
   const cancelledCount = rides.filter((r) => r.status === 'cancelled').length;
   const ratings = rides
-    .map((r) => r.rating?.driverRating)
+    .flatMap((r) => r.ratings || [])
+    .map((r) => r.score)
     .filter((v) => v != null);
   const avgRating = ratings.length > 0
     ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)

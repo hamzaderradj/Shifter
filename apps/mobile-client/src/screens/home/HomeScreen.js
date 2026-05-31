@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuthStore, useMapStore, useRideStore } from '../../store';
-import { ridesAPI } from '../../services/api';
+import { ridesAPI, usersAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
 
@@ -23,19 +23,27 @@ export default function HomeScreen() {
   const mapRef = useRef(null);
   const [locError, setLocError] = useState(false);
 
-  // ── Vérifier si une course est déjà active (reprise après restart) ──
+  // ── Vérifier course active ou course terminée non notée ──
   useFocusEffect(
     useCallback(() => {
       (async () => {
         try {
+          // 1. Course en cours → reprendre le suivi
           const { data } = await ridesAPI.getActive();
           if (data.ride) {
             setActiveRide(data.ride);
             navigation.navigate('Tracking', { rideId: data.ride.id });
+            return;
           }
-        } catch {
-          // Pas de course active, on reste sur l'accueil
-        }
+        } catch {}
+
+        try {
+          // 2. Course récemment terminée non notée → aller noter
+          const { data } = await ridesAPI.getUnrated();
+          if (data.ride) {
+            navigation.navigate('Rating', { rideId: data.ride.id });
+          }
+        } catch {}
       })();
     }, [])
   );

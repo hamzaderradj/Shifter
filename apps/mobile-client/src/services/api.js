@@ -61,6 +61,7 @@ export const ridesAPI = {
   create: (data) => api.post('/rides', data),
   getActive: () => api.get('/rides/active'),
   getHistory: (page = 1) => api.get(`/rides/history?page=${page}`),
+  getUnrated: () => api.get('/rides/unrated'),
   getById: (id) => api.get(`/rides/${id}`),
   updateStatus: (id, status, reason) => api.post(`/rides/${id}/status`, { status, reason }),
   rate: (id, score, comment) => api.post(`/rides/${id}/rate`, { score, comment }),

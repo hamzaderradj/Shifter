@@ -193,6 +193,36 @@ router.get('/active', authenticate, async (req, res) => {
   }
 });
 
+// ── GET /rides/unrated ───────────────────────────────────────
+// Retourne la course la plus récente terminée et non notée par le client (dans les 24h)
+router.get('/unrated', authenticate, async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h
+
+    const ride = await prisma.ride.findFirst({
+      where: {
+        clientId: req.user.id,
+        status: 'completed',
+        completedAt: { gte: since },
+        // Pas de rating fait par le client sur cette course
+        ratings: { none: { fromUser: req.user.id } }
+      },
+      orderBy: { completedAt: 'desc' },
+      include: {
+        driver: {
+          include: {
+            user: { select: { firstName: true, lastName: true, avatarUrl: true } }
+          }
+        }
+      }
+    });
+
+    res.json({ success: true, ride: ride || null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // ── GET /rides/history ───────────────────────────────────────
 router.get('/history', authenticate, async (req, res) => {
   try {

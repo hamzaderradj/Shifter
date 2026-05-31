@@ -132,4 +132,33 @@ router.post('/report', authenticate,
   }
 );
 
+// ── POST /users/sos ───────────────────────────────────────────
+router.post('/sos', authenticate, async (req, res) => {
+  try {
+    const { rideId, lat, lng } = req.body;
+    const alert = await prisma.sosAlert.create({
+      data: {
+        userId: req.user.id,
+        rideId: rideId || null,
+        lat: lat || null,
+        lng: lng || null,
+      },
+      include: {
+        user: { select: { firstName: true, lastName: true, phone: true } }
+      }
+    });
+
+    // Notifier les admins via socket
+    const io = req.app.get('io');
+    if (io) io.emit('sos_alert', { alert });
+
+    res.status(201).json({ success: true, alert });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── GET /admin/sos ────────────────────────────────────────────
+// (accessible via admin route, ici pour référence uniquement)
+
 module.exports = router;

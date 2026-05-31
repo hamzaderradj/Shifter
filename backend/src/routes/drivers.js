@@ -124,7 +124,16 @@ router.get('/me', authenticate, async (req, res) => {
       }
     });
     if (!driver) return res.status(404).json({ success: false, message: 'Profil introuvable' });
-    res.json({ success: true, driver });
+
+    // Calcul note moyenne depuis les ratings reçus
+    const ratings = await prisma.rating.findMany({
+      where: { toUserId: req.user.id }
+    });
+    const avgRating = ratings.length > 0
+      ? parseFloat((ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(2))
+      : null;
+
+    res.json({ success: true, driver: { ...driver, avgRating, ratingsCount: ratings.length } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
@@ -258,9 +267,9 @@ router.get('/earnings', authenticate, requireDriver, async (req, res) => {
       success: true,
       period,
       totalRides: rides.length,
-      grossRevenue: Math.round(total),
-      netEarnings: Math.round(earnings),
-      platformFee: Math.round(total - earnings),
+      grossRevenue: parseFloat(total.toFixed(2)),
+      netEarnings: parseFloat(earnings.toFixed(2)),
+      platformFee: parseFloat((total - earnings).toFixed(2)),
       rides
     });
   } catch (err) {

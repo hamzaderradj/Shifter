@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuthStore } from '../store';
+import { usersAPI } from '../services/api';
 import { COLORS } from '../utils/theme';
 
 // Auth Screens
@@ -24,6 +25,7 @@ import NotificationsScreen from '../screens/profile/NotificationsScreen';
 import FavoritesScreen from '../screens/profile/FavoritesScreen';
 import SupportScreen from '../screens/profile/SupportScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
+import RideDetailScreen from '../screens/history/RideDetailScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -33,6 +35,21 @@ const tabBarIcon = (name) => ({ color, size }) => (
 );
 
 function MainTabs() {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const { data } = await usersAPI.getNotifications();
+        const count = (data.notifications || []).filter(n => !n.isRead).length;
+        setUnreadCount(count);
+      } catch {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -63,7 +80,11 @@ function MainTabs() {
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ title: 'Profil', tabBarIcon: tabBarIcon('person-outline') }}
+        options={{
+          title: 'Profil',
+          tabBarIcon: tabBarIcon('person-outline'),
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+        }}
       />
     </Tab.Navigator>
   );
@@ -90,6 +111,7 @@ function AppStack() {
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="RideDetail" component={RideDetailScreen} />
     </Stack.Navigator>
   );
 }

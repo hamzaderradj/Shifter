@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, StatusBar, ScrollView, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useDriverAuthStore, useEarningsStore } from '../../store';
+import { useFocusEffect } from '@react-navigation/native';
+import { useDriverAuthStore } from '../../store';
+import { driverAPI } from '../../services/api';
 import { COLORS, RADIUS } from '../../utils/theme';
 
 const MenuItem = ({ icon, label, subtitle, onPress, danger, value, badge }) => (
@@ -28,7 +30,30 @@ const MenuItem = ({ icon, label, subtitle, onPress, danger, value, badge }) => (
 export default function DriverProfileScreen() {
   const navigation = useNavigation();
   const { driver, logout } = useDriverAuthStore();
-  const { today, trips } = useEarningsStore();
+  const [todayEarnings, setTodayEarnings] = useState(0);
+  const [monthEarnings, setMonthEarnings] = useState(0);
+  const [totalTrips, setTotalTrips] = useState(0);
+  const [avgRating, setAvgRating] = useState(null);
+
+  useFocusEffect(useCallback(() => {
+    const fetchStats = async () => {
+      try {
+        const [todayRes, monthRes] = await Promise.all([
+          driverAPI.getEarnings('today'),
+          driverAPI.getEarnings('month'),
+        ]);
+        setTodayEarnings(todayRes.data.netEarnings ?? 0);
+        setMonthEarnings(monthRes.data.netEarnings ?? 0);
+        setTotalTrips(monthRes.data.totalRides ?? 0);
+      } catch {}
+      try {
+        const { data } = await driverAPI.getMe();
+        setAvgRating(data.driver?.avgRating ?? null);
+        setTotalTrips(data.driver?.totalRides ?? 0);
+      } catch {}
+    };
+    fetchStats();
+  }, []));
 
   const handleLogout = () => {
     Alert.alert('Déconnexion', 'Tu veux vraiment te déconnecter ?', [
@@ -68,8 +93,8 @@ export default function DriverProfileScreen() {
             <Text style={styles.profilePhone}>{driver?.phone || '+33 6 XX XX XX XX'}</Text>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={14} color={COLORS.accent} />
-              <Text style={styles.ratingText}>4.87</Text>
-              <Text style={styles.ratingCount}>({trips} courses)</Text>
+              <Text style={styles.ratingText}>{avgRating ? avgRating.toFixed(2) : '—'}</Text>
+              <Text style={styles.ratingCount}>({totalTrips} course{totalTrips !== 1 ? 's' : ''})</Text>
             </View>
           </View>
         </View>
@@ -77,13 +102,13 @@ export default function DriverProfileScreen() {
         {/* Stats band */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{today.toFixed(0)} €</Text>
+            <Text style={styles.statValue}>{todayEarnings.toFixed(0)} €</Text>
             <Text style={styles.statLabel}>Aujourd'hui</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{trips}</Text>
-            <Text style={styles.statLabel}>Courses</Text>
+            <Text style={styles.statValue}>{totalTrips}</Text>
+            <Text style={styles.statLabel}>Ce mois</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
@@ -102,7 +127,7 @@ export default function DriverProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Activité</Text>
-          <MenuItem icon="cash-outline" label="Revenus" value="487 €" onPress={() => soon('Revenus')} />
+          <MenuItem icon="cash-outline" label="Revenus" value={`${monthEarnings.toFixed(0)} €`} onPress={() => navigation.navigate('Earnings')} />
           <MenuItem icon="gift-outline" label="Bonus" subtitle="Objectifs et récompenses" onPress={() => soon('Bonus')} badge="3" />
           <MenuItem icon="star-outline" label="Évaluations" subtitle="Tes notes clients" onPress={() => soon('Évaluations')} />
         </View>

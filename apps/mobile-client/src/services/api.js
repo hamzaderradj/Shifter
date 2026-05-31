@@ -78,6 +78,7 @@ export const usersAPI = {
   getNotifications: () => api.get('/users/notifications'),
   markNotificationsRead: () => api.put('/users/notifications/read-all'),
   submitSupport: (data) => api.post('/users/support', data),
+  sendSOS: (data) => api.post('/users/sos', data),
 };
 
 export default api;

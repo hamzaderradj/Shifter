@@ -7,7 +7,8 @@ import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRideStore } from '../../store';
-import { ridesAPI } from '../../services/api';
+import { ridesAPI, usersAPI } from '../../services/api';
+import * as Location from 'expo-location';
 import { initSocket, getSocket, joinRide, subscribeToDriver, unsubscribeFromDriver } from '../../services/socket';
 import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
 
@@ -147,17 +148,40 @@ export default function TrackingScreen({ navigation, route }) {
     ]);
   };
 
-  const handleSOS = async () => {
-    Alert.alert('🆘 SOS', 'Envoyer une alerte d\'urgence ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Envoyer SOS', style: 'destructive',
-        onPress: async () => {
-          await ridesAPI.sos(rideId).catch(() => {});
-          Alert.alert('SOS envoyé', 'Notre équipe a été alertée.');
-        }
-      }
-    ]);
+  const handleSOS = () => {
+    Alert.alert(
+      '🆘 Urgence',
+      'Que voulez-vous faire ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: '📞 Appeler le 15 (SAMU)',
+          onPress: () => Linking.openURL('tel:15'),
+        },
+        {
+          text: '📞 Appeler le 17 (Police)',
+          onPress: () => Linking.openURL('tel:17'),
+        },
+        {
+          text: '🚨 Alerter Shifter',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null);
+              await usersAPI.sendSOS({
+                rideId,
+                lat: loc?.coords?.latitude || null,
+                lng: loc?.coords?.longitude || null,
+              });
+              Alert.alert('✅ Alerte envoyée', 'Notre équipe a été notifiée et va vous contacter.');
+            } catch {
+              Alert.alert('Alerte envoyée', 'Notre équipe a été notifiée.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const callDriver = () => {

@@ -236,7 +236,7 @@ router.get('/:id', authenticate, async (req, res) => {
             user: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } }
           }
         },
-        rating: true
+        ratings: true
       }
     });
 

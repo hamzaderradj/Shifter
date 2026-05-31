@@ -422,4 +422,35 @@ router.post('/reset-test-data', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── GET /admin/sos ────────────────────────────────────────────
+router.get('/sos', ...adminOnly, async (req, res) => {
+  try {
+    const resolved = req.query.resolved === 'true';
+    const alerts = await prisma.sosAlert.findMany({
+      where: { resolved },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { firstName: true, lastName: true, phone: true } },
+        ride: { select: { id: true, pickupAddress: true, dropoffAddress: true } }
+      }
+    });
+    res.json({ success: true, alerts });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── PUT /admin/sos/:id/resolve ────────────────────────────────
+router.put('/sos/:id/resolve', ...adminOnly, async (req, res) => {
+  try {
+    const alert = await prisma.sosAlert.update({
+      where: { id: req.params.id },
+      data: { resolved: true }
+    });
+    res.json({ success: true, alert });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 module.exports = router;

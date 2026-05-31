@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ridesAPI } from '../../services/api';
@@ -36,72 +36,83 @@ export default function RatingScreen({ navigation, route }) {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <View style={styles.content}>
-        {/* Icône */}
-        <View style={styles.icon}>
-          <Ionicons name="checkmark-circle" size={64} color={COLORS.success} />
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          {/* Icône */}
+          <View style={styles.icon}>
+            <Ionicons name="checkmark-circle" size={64} color={COLORS.success} />
+          </View>
+          <Text style={styles.title}>Course terminée !</Text>
+          <Text style={styles.subtitle}>Évaluez votre chauffeur</Text>
+
+          {/* Étoiles */}
+          <View style={styles.stars}>
+            {[1, 2, 3, 4, 5].map((s) => (
+              <TouchableOpacity key={s} onPress={() => setScore(s)} activeOpacity={0.7}>
+                <Ionicons
+                  name={s <= score ? 'star' : 'star-outline'}
+                  size={44}
+                  color={s <= score ? COLORS.accent : COLORS.gray[300]}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.scoreLabel}>
+            {score === 1 && 'Très mauvais'}{score === 2 && 'Mauvais'}{score === 3 && 'Correct'}
+            {score === 4 && 'Bien'}{score === 5 && 'Excellent !'}
+          </Text>
+
+          {/* Commentaires rapides */}
+          <View style={styles.quickComments}>
+            {QUICK_COMMENTS.map((c) => (
+              <TouchableOpacity
+                key={c}
+                style={[styles.quickChip, comment === c && styles.quickChipActive]}
+                onPress={() => setComment(comment === c ? '' : c)}
+              >
+                <Text style={[styles.quickChipText, comment === c && styles.quickChipTextActive]}>{c}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Commentaire libre */}
+          <TextInput
+            style={styles.commentInput}
+            placeholder="Laisser un commentaire..."
+            placeholderTextColor={COLORS.gray[400]}
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            maxLength={300}
+            blurOnSubmit
+          />
         </View>
-        <Text style={styles.title}>Course terminée !</Text>
-        <Text style={styles.subtitle}>Évaluez votre chauffeur</Text>
 
-        {/* Étoiles */}
-        <View style={styles.stars}>
-          {[1, 2, 3, 4, 5].map((s) => (
-            <TouchableOpacity key={s} onPress={() => setScore(s)} activeOpacity={0.7}>
-              <Ionicons
-                name={s <= score ? 'star' : 'star-outline'}
-                size={44}
-                color={s <= score ? COLORS.accent : COLORS.gray[300]}
-              />
-            </TouchableOpacity>
-          ))}
+        {/* Actions */}
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+          <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+            <Text style={styles.skipBtnText}>Passer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.submitBtn, !score && styles.submitBtnDisabled]}
+            onPress={handleSubmit}
+            disabled={!score || loading}
+          >
+            {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.submitBtnText}>Valider</Text>}
+          </TouchableOpacity>
         </View>
-
-        <Text style={styles.scoreLabel}>
-          {score === 1 && 'Très mauvais'}{score === 2 && 'Mauvais'}{score === 3 && 'Correct'}
-          {score === 4 && 'Bien'}{score === 5 && 'Excellent !'}
-        </Text>
-
-        {/* Commentaires rapides */}
-        <View style={styles.quickComments}>
-          {QUICK_COMMENTS.map((c) => (
-            <TouchableOpacity
-              key={c}
-              style={[styles.quickChip, comment === c && styles.quickChipActive]}
-              onPress={() => setComment(comment === c ? '' : c)}
-            >
-              <Text style={[styles.quickChipText, comment === c && styles.quickChipTextActive]}>{c}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Commentaire libre */}
-        <TextInput
-          style={styles.commentInput}
-          placeholder="Laisser un commentaire..."
-          placeholderTextColor={COLORS.gray[400]}
-          value={comment}
-          onChangeText={setComment}
-          multiline
-          maxLength={300}
-        />
-      </View>
-
-      {/* Actions */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
-          <Text style={styles.skipBtnText}>Passer</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.submitBtn, !score && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={!score || loading}
-        >
-          {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.submitBtnText}>Valider</Text>}
-        </TouchableOpacity>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

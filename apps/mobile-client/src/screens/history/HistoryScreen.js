@@ -51,10 +51,10 @@ const RideCard = ({ ride, onPress }) => (
           <Text style={styles.driverName}>
             {ride.driver.user?.firstName} {ride.driver.user?.lastName}
           </Text>
-          {ride.rating && (
+          {ride.ratings?.length > 0 && (
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={12} color={COLORS.accent} />
-              <Text style={styles.ratingText}>{ride.rating.score}/5</Text>
+              <Text style={styles.ratingText}>{ride.ratings[0].score}/5</Text>
             </View>
           )}
         </View>

@@ -19,7 +19,7 @@ export default function SosAlertsPage() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30000);
+    const interval = setInterval(load, 120000); // 2 min
     return () => clearInterval(interval);
   }, [showResolved]);
 

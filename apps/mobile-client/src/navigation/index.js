@@ -46,7 +46,7 @@ function MainTabs() {
       } catch {}
     };
     fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
+    const interval = setInterval(fetchUnread, 120000); // 2 min
     return () => clearInterval(interval);
   }, []);
 

@@ -57,7 +57,11 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(config.env === 'production' ? 'combined' : 'dev'));
-app.use(defaultLimiter);
+// Rate limiter — exclure /api/health et monter la limite pour les apps mobiles
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+  return defaultLimiter(req, res, next);
+});
 
 // Dossier uploads
 const uploadsDir = path.join(__dirname, '../uploads/documents');
@@ -237,6 +241,12 @@ app.use((err, req, res, next) => {
     message: config.env === 'production' ? 'Erreur serveur interne' : err.message
   });
 });
+
+// ── Keep-alive (évite le sleep Render free tier) ──────────────
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${config.port}`;
+setInterval(() => {
+  http.get(`${SELF_URL}/api/health`).on('error', () => {});
+}, 10 * 60 * 1000); // ping toutes les 10 min
 
 // ── Démarrage ─────────────────────────────────────────────────
 server.listen(config.port, () => {

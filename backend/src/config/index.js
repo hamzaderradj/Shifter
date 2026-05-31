@@ -43,7 +43,7 @@ module.exports = {
 
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000,
-    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
+    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 500,
     otpMax: parseInt(process.env.OTP_RATE_LIMIT_MAX, 10) || 5,
   },
 

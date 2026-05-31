@@ -71,7 +71,7 @@ export default function ProfileScreen() {
             {name ? (
               <Text style={styles.profileName}>{name}</Text>
             ) : (
-              <TouchableOpacity onPress={() => soon('Modifier le profil')} style={styles.addNameBtn}>
+              <TouchableOpacity onPress={() => navigation.navigate('EditProfile')} style={styles.addNameBtn}>
                 <Text style={styles.addNameText}>+ Ajouter mon prénom</Text>
               </TouchableOpacity>
             )}

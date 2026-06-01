@@ -17,6 +17,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.taxamoto.driver",
+      "config": {
+        "googleMapsApiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Shifter Rider utilise votre localisation pour gérer vos courses.",
         "NSLocationAlwaysUsageDescription": "Shifter Rider utilise votre localisation pour recevoir des courses en arrière-plan."
@@ -28,6 +31,11 @@
         "backgroundColor": "#0F0F1A"
       },
       "package": "com.taxamoto.driver",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
+        }
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -68,6 +76,7 @@
     ],
     "extra": {
       "apiUrl": "https://shifter-bmbf.onrender.com",
+      "googleMapsKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU",
       "eas": {
         "projectId": "01a05404-ece7-4121-8e0a-7e017015efb1"
       }

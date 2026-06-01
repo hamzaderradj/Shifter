@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Dimensions, Animated, Alert, Vibration,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT, Circle } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import axios from 'axios';
@@ -362,7 +362,7 @@ export default function DriverHomeScreen() {
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_DEFAULT}
+        provider={PROVIDER_GOOGLE}
         userInterfaceStyle="dark"
         initialRegion={{
           latitude: location?.latitude ?? PARIS.latitude,

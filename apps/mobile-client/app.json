@@ -20,6 +20,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.taxamoto.client",
+      "config": {
+        "googleMapsApiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous.",
         "NSLocationAlwaysUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous."
@@ -31,6 +34,11 @@
         "backgroundColor": "#0F1729"
       },
       "package": "com.taxamoto.client",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
+        }
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -76,6 +84,7 @@
     ],
     "extra": {
       "apiUrl": "https://shifter-bmbf.onrender.com",
+      "googleMapsKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU",
       "eas": {
         "projectId": "32e0c330-b991-461b-9ded-12ba346f91f2"
       }

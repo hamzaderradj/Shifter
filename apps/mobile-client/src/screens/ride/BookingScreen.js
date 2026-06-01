@@ -37,60 +37,57 @@ function estimateDuration(distanceKm) {
   return Math.round((distanceKm / 30) * 60);
 }
 
-// ── Zone de couverture : Île-de-France ─────────────────────────
-const IDF_BOUNDS = {
-  viewbox: '1.44,48.12,3.56,49.12', // lon_min,lat_min,lon_max,lat_max
-  bounded: 1,
-};
+// ── Google Maps ────────────────────────────────────────────────
 const PARIS_CENTER = { latitude: 48.8566, longitude: 2.3522 };
+const GOOGLE_KEY = 'AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU';
+const GOOGLE_PLACES = 'https://maps.googleapis.com/maps/api/place';
+const GOOGLE_GEOCODE = 'https://maps.googleapis.com/maps/api/geocode';
 
-// ── Geocoding via Nominatim (OSM, gratuit, sans clé API) ────────
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const HEADERS = { 'User-Agent': 'ShifterApp/1.0', 'Accept-Language': 'fr' };
-
-function formatAddress(item) {
-  const a = item.address || {};
-  const number   = a.house_number || '';
-  const street   = a.road || a.pedestrian || a.footway || a.path || '';
-  const postcode = a.postcode || '';
-  const city     = a.city || a.town || a.village || a.suburb || a.municipality || '';
-
-  let line1 = '';
-  if (number && street) line1 = `${number} ${street}`;
-  else if (street) line1 = street;
-  else line1 = item.display_name.split(',')[0].trim();
-
-  let line2 = '';
-  if (postcode && city) line2 = `${postcode} ${city}`;
-  else if (city) line2 = city;
-
-  return line2 ? `${line1}, ${line2}` : line1;
-}
-
-async function searchAddress(query) {
+async function searchAddress(query, userLat, userLng) {
+  const location = userLat ? `${userLat},${userLng}` : '48.8566,2.3522';
   const params = new URLSearchParams({
-    q: query,
-    format: 'json',
-    limit: '8',
-    addressdetails: '1',
-    viewbox: IDF_BOUNDS.viewbox, // préférence IDF, pas strict
-    bounded: '0',               // pas de blocage strict
-    countrycodes: 'fr',
+    input: query,
+    key: GOOGLE_KEY,
+    language: 'fr',
+    components: 'country:fr',
+    location,
+    radius: '50000',
   });
-  const res = await fetch(`${NOMINATIM}/search?${params}`, { headers: HEADERS });
+  const res = await fetch(`${GOOGLE_PLACES}/autocomplete/json?${params}`);
   const json = await res.json();
-  return json.map((item) => ({
-    address: formatAddress(item),
-    lat: parseFloat(item.lat),
-    lng: parseFloat(item.lon),
-  }));
+  if (!json.predictions) return [];
+
+  // Récupérer les coordonnées pour chaque prédiction
+  const results = await Promise.all(
+    json.predictions.slice(0, 6).map(async (p) => {
+      const detailParams = new URLSearchParams({
+        place_id: p.place_id,
+        fields: 'geometry,formatted_address',
+        key: GOOGLE_KEY,
+        language: 'fr',
+      });
+      const detailRes = await fetch(`${GOOGLE_PLACES}/details/json?${detailParams}`);
+      const detail = await detailRes.json();
+      const loc = detail.result?.geometry?.location;
+      return {
+        address: detail.result?.formatted_address || p.description,
+        lat: loc?.lat || null,
+        lng: loc?.lng || null,
+      };
+    })
+  );
+  return results.filter(r => r.lat !== null);
 }
 
 async function reverseGeocode(lat, lng) {
-  const url = `${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`;
-  const res = await fetch(url, { headers: HEADERS });
+  const params = new URLSearchParams({
+    latlng: `${lat},${lng}`,
+    key: GOOGLE_KEY,
+    language: 'fr',
+  });
+  const res = await fetch(`${GOOGLE_GEOCODE}/json?${params}`);
   const json = await res.json();
-  return formatAddress(json);
+  return json.results?.[0]?.formatted_address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
 // ───────────────────────────────────────────────────────────────

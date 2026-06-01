@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Linking, Alert,
   Animated, StatusBar, Share
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRideStore } from '../../store';
@@ -205,7 +205,7 @@ export default function TrackingScreen({ navigation, route }) {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
-        provider={PROVIDER_DEFAULT}
+        provider={PROVIDER_GOOGLE}
         showsUserLocation
       >
         {pickupCoord && (

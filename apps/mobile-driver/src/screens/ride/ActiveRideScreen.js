@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   Alert, Linking, StatusBar, ActivityIndicator, Modal
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -303,8 +303,8 @@ export default function ActiveRideScreen({ navigation, route }) {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
-        provider={PROVIDER_DEFAULT}
-        userInterfaceStyle="dark"
+        provider={PROVIDER_GOOGLE}
+        
         showsUserLocation
         showsMyLocationButton={false}
         initialRegion={pickupCoord

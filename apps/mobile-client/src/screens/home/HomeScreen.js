@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   StatusBar, Dimensions, ActivityIndicator
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -84,7 +84,7 @@ export default function HomeScreen() {
         <MapView
           ref={mapRef}
           style={styles.map}
-          provider={PROVIDER_DEFAULT}
+          provider={PROVIDER_GOOGLE}
           initialRegion={{
             latitude: userLocation?.latitude ?? PARIS.latitude,
             longitude: userLocation?.longitude ?? PARIS.longitude,

@@ -453,4 +453,28 @@ router.put('/sos/:id/resolve', ...adminOnly, async (req, res) => {
   }
 });
 
+// ── POST /admin/fix-phones — normalise les numéros +330xxx → +33xxx ──
+router.post('/fix-phones', ...adminOnly, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { phone: { startsWith: '+330' } }
+    });
+    let fixed = 0;
+    for (const user of users) {
+      const newPhone = '+33' + user.phone.slice(4);
+      // Vérifier qu'il n'y a pas déjà un user avec ce numéro
+      const existing = await prisma.user.findUnique({ where: { phone: newPhone } });
+      if (!existing) {
+        await prisma.user.update({ where: { id: user.id }, data: { phone: newPhone } });
+        // Mettre à jour aussi les OTP codes
+        await prisma.otpCode.updateMany({ where: { phone: user.phone }, data: { phone: newPhone } });
+        fixed++;
+      }
+    }
+    res.json({ success: true, fixed, total: users.length });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

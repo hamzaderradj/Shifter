@@ -321,11 +321,12 @@ export default function DriverHomeScreen() {
 
   // ── Bannière statut compte ───────────────────────────────────
   const driverStatus = driver?.status;
-  const isPending  = driverStatus === 'pending'  || !driverStatus;
+  // Si status inconnu (undefined = données anciennes en cache), on laisse passer
+  // On bloque seulement sur pending/rejected explicite
+  const isPending  = driverStatus === 'pending';
   const isRejected = driverStatus === 'rejected';
-  const isApproved = driverStatus === 'approved';
 
-  if (!isApproved) {
+  if (isPending || isRejected) {
     return (
       <View style={styles.statusContainer}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
@@ -363,7 +364,6 @@ export default function DriverHomeScreen() {
         ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
-        userInterfaceStyle="dark"
         initialRegion={{
           latitude: location?.latitude ?? PARIS.latitude,
           longitude: location?.longitude ?? PARIS.longitude,

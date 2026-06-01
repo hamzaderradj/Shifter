@@ -40,54 +40,85 @@ function estimateDuration(distanceKm) {
 // ── Google Maps ────────────────────────────────────────────────
 const PARIS_CENTER = { latitude: 48.8566, longitude: 2.3522 };
 const GOOGLE_KEY = 'AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU';
-const GOOGLE_PLACES = 'https://maps.googleapis.com/maps/api/place';
-const GOOGLE_GEOCODE = 'https://maps.googleapis.com/maps/api/geocode';
 
+// Autocomplete — retourne suggestions avec place_id (sans coordonnées pour l'instant)
 async function searchAddress(query, userLat, userLng) {
-  const location = userLat ? `${userLat},${userLng}` : '48.8566,2.3522';
-  const params = new URLSearchParams({
-    input: query,
-    key: GOOGLE_KEY,
-    language: 'fr',
-    components: 'country:fr',
-    location,
-    radius: '50000',
-  });
-  const res = await fetch(`${GOOGLE_PLACES}/autocomplete/json?${params}`);
-  const json = await res.json();
-  if (!json.predictions) return [];
-
-  // Récupérer les coordonnées pour chaque prédiction
-  const results = await Promise.all(
-    json.predictions.slice(0, 6).map(async (p) => {
-      const detailParams = new URLSearchParams({
-        place_id: p.place_id,
-        fields: 'geometry,formatted_address',
-        key: GOOGLE_KEY,
-        language: 'fr',
-      });
-      const detailRes = await fetch(`${GOOGLE_PLACES}/details/json?${detailParams}`);
-      const detail = await detailRes.json();
-      const loc = detail.result?.geometry?.location;
-      return {
-        address: detail.result?.formatted_address || p.description,
-        lat: loc?.lat || null,
-        lng: loc?.lng || null,
-      };
-    })
-  );
-  return results.filter(r => r.lat !== null);
+  try {
+    const lat = userLat || 48.8566;
+    const lng = userLng || 2.3522;
+    const params = new URLSearchParams({
+      input: query,
+      key: GOOGLE_KEY,
+      language: 'fr',
+      components: 'country:fr',
+      location: `${lat},${lng}`,
+      radius: '50000',
+      types: 'address|establishment|geocode',
+    });
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params}`
+    );
+    const json = await res.json();
+    if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
+      console.warn('Places autocomplete error:', json.status, json.error_message);
+    }
+    return (json.predictions || []).slice(0, 6).map(p => ({
+      address: p.description,
+      place_id: p.place_id,
+      lat: null,
+      lng: null,
+    }));
+  } catch (e) {
+    console.warn('searchAddress error:', e);
+    return [];
+  }
 }
 
+// Récupère les coordonnées d'un place_id (appelé seulement au clic)
+async function getPlaceCoords(placeId) {
+  try {
+    const params = new URLSearchParams({
+      place_id: placeId,
+      fields: 'geometry,formatted_address',
+      key: GOOGLE_KEY,
+      language: 'fr',
+    });
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?${params}`
+    );
+    const json = await res.json();
+    const loc = json.result?.geometry?.location;
+    return {
+      address: json.result?.formatted_address || null,
+      lat: loc?.lat || null,
+      lng: loc?.lng || null,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Reverse geocode — adresse depuis coordonnées GPS
 async function reverseGeocode(lat, lng) {
-  const params = new URLSearchParams({
-    latlng: `${lat},${lng}`,
-    key: GOOGLE_KEY,
-    language: 'fr',
-  });
-  const res = await fetch(`${GOOGLE_GEOCODE}/json?${params}`);
-  const json = await res.json();
-  return json.results?.[0]?.formatted_address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  try {
+    const params = new URLSearchParams({
+      latlng: `${lat},${lng}`,
+      key: GOOGLE_KEY,
+      language: 'fr',
+      result_type: 'street_address|route|locality',
+    });
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?${params}`
+    );
+    const json = await res.json();
+    if (json.status === 'OK' && json.results?.length > 0) {
+      return json.results[0].formatted_address;
+    }
+    console.warn('Geocode error:', json.status);
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -146,10 +177,14 @@ export default function BookingScreen({ navigation }) {
           lng = pos.coords.longitude;
         }
         const addr = await reverseGeocode(lat, lng);
-        // Simplifier l'adresse (supprimer les détails inutiles)
-        const short = addr.split(',').slice(0, 3).join(',');
-        setPickupText(short);
-        setPickup({ address: short, lat, lng });
+        if (addr) {
+          const short = addr.split(',').slice(0, 2).join(',').trim();
+          setPickupText(short);
+          setPickup({ address: short, lat, lng });
+        } else {
+          setPickupText('Ma position actuelle');
+          setPickup({ address: 'Ma position actuelle', lat, lng });
+        }
       } catch {
         setPickupText('Ma position actuelle');
         if (userLocation) {
@@ -186,16 +221,27 @@ export default function BookingScreen({ navigation }) {
     }, 400);
   };
 
-  const selectSuggestion = (item) => {
+  const selectSuggestion = async (item) => {
     Keyboard.dismiss();
-    if (activeField === 'pickup') {
-      setPickupText(item.address);
-      setPickup(item);
-    } else {
-      setDropoffText(item.address);
-      setDropoff(item);
-    }
     setSuggestions([]);
+    // Afficher l'adresse tout de suite
+    if (activeField === 'pickup') setPickupText(item.address);
+    else setDropoffText(item.address);
+
+    // Récupérer les coords via place_id si nécessaire
+    let finalItem = item;
+    if (item.place_id && (!item.lat || !item.lng)) {
+      const coords = await getPlaceCoords(item.place_id);
+      if (coords) finalItem = { ...item, ...coords };
+    }
+
+    if (activeField === 'pickup') {
+      setPickupText(finalItem.address);
+      setPickup(finalItem);
+    } else {
+      setDropoffText(finalItem.address);
+      setDropoff(finalItem);
+    }
     setActiveField(null);
   };
 

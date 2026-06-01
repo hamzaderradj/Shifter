@@ -57,6 +57,8 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(config.env === 'production' ? 'combined' : 'dev'));
+// Trust proxy (nécessaire sur Render/Heroku pour rate-limit correct)
+app.set('trust proxy', 1);
 // Rate limiter — exclure /api/health et monter la limite pour les apps mobiles
 app.use((req, res, next) => {
   if (req.path === '/api/health') return next();

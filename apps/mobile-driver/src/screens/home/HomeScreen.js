@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
   StatusBar, Dimensions, Animated, Alert, Vibration,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
@@ -36,6 +36,7 @@ export default function DriverHomeScreen() {
   const [location, setLocation] = useState(null);
   const [toggling, setToggling] = useState(false);
   const [acceptingRide, setAcceptingRide] = useState(false);
+  const [statusChecked, setStatusChecked] = useState(false);
   const [timeLeft, setTimeLeft] = useState(30);
   const timerRef = useRef(null);
 
@@ -52,10 +53,10 @@ export default function DriverHomeScreen() {
           if (meRes.status === 'fulfilled' && meRes.value.data.driver) {
             const freshDriver = meRes.value.data.driver;
             updateDriver(freshDriver);
-            // Synchroniser isOnline avec la vraie disponibilité en base
             const reallyOnline = freshDriver.availability === 'online';
             setOnline(reallyOnline);
           }
+          setStatusChecked(true);
           if (earningsRes.status === 'fulfilled') {
             const d = earningsRes.value.data;
             setEarnings({
@@ -94,7 +95,9 @@ export default function DriverHomeScreen() {
               });
             }
           }
-        } catch {}
+        } catch {} finally {
+          setStatusChecked(true);
+        }
       })();
     }, [])
   );
@@ -321,10 +324,18 @@ export default function DriverHomeScreen() {
 
   // ── Bannière statut compte ───────────────────────────────────
   const driverStatus = driver?.status;
-  // Si status inconnu (undefined = données anciennes en cache), on laisse passer
-  // On bloque seulement sur pending/rejected explicite
   const isPending  = driverStatus === 'pending';
   const isRejected = driverStatus === 'rejected';
+
+  // Attendre la réponse serveur avant de bloquer (évite le flash sur données cachées)
+  if (!statusChecked) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   if (isPending || isRejected) {
     return (

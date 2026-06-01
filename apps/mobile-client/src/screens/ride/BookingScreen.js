@@ -176,7 +176,7 @@ export default function BookingScreen({ navigation }) {
     debounceRef.current = setTimeout(async () => {
       setLoadingSuggest(true);
       try {
-        const results = await searchAddress(text);
+        const results = await searchAddress(text, userLocation?.latitude, userLocation?.longitude);
         setSuggestions(results);
       } catch {
         setSuggestions([]);

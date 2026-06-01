@@ -83,7 +83,7 @@ function MainTabs() {
         options={{
           title: 'Profil',
           tabBarIcon: tabBarIcon('person-outline'),
-          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+          tabBarBadge: unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : undefined,
         }}
       />
     </Tab.Navigator>

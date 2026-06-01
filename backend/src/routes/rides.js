@@ -3,7 +3,7 @@ const { body, query, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const { authenticate, requireDriver } = require('../middleware/auth');
 const { estimateRide } = require('../services/pricing');
-const { autocomplete, reverseGeocode } = require('../services/geocoding');
+const { autocomplete, getPlaceDetails, reverseGeocode } = require('../services/geocoding');
 const {
   notifyRideRequest, notifyRideAccepted, notifyDriverArrived,
   notifyRideStarted, notifyRideCompleted, notifyRideCancelled
@@ -484,6 +484,18 @@ router.get('/geocode/reverse', authenticate, async (req, res) => {
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur géocodage inverse' });
+  }
+});
+
+// ── GET /rides/geocode/details ────────────────────────────────
+router.get('/geocode/details', authenticate, async (req, res) => {
+  try {
+    const { place_id } = req.query;
+    if (!place_id) return res.status(400).json({ success: false, message: 'place_id requis' });
+    const result = await getPlaceDetails(place_id);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur détails lieu' });
   }
 });
 

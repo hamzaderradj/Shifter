@@ -8,6 +8,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { ridesAPI, usersAPI } from '../../services/api';
+
+// ── Wrappers geocoding → backend ────────────────────────────────
+async function searchAddress(query, lat, lng) {
+  try {
+    const { data } = await ridesAPI.autocomplete(query, lat || 48.8566, lng || 2.3522);
+    return data.results || [];
+  } catch { return []; }
+}
+
+async function getPlaceCoords(placeId) {
+  try {
+    const { data } = await ridesAPI.placeDetails(placeId);
+    return data.result || null;
+  } catch { return null; }
+}
+
+async function reverseGeocodeAddr(lat, lng) {
+  try {
+    const { data } = await ridesAPI.reverseGeocode(lat, lng);
+    return data.result || null;
+  } catch { return null; }
+}
 import { useMapStore, useRideStore } from '../../store';
 import { COLORS } from '../../utils/theme';
 import { joinRide, initSocket, getSocket } from '../../services/socket';
@@ -37,89 +59,8 @@ function estimateDuration(distanceKm) {
   return Math.round((distanceKm / 30) * 60);
 }
 
-// ── Google Maps ────────────────────────────────────────────────
+// ── Geocoding via backend (Google Maps) ────────────────────────
 const PARIS_CENTER = { latitude: 48.8566, longitude: 2.3522 };
-const GOOGLE_KEY = 'AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU';
-
-// Autocomplete — retourne suggestions avec place_id (sans coordonnées pour l'instant)
-async function searchAddress(query, userLat, userLng) {
-  try {
-    const lat = userLat || 48.8566;
-    const lng = userLng || 2.3522;
-    const params = new URLSearchParams({
-      input: query,
-      key: GOOGLE_KEY,
-      language: 'fr',
-      components: 'country:fr',
-      location: `${lat},${lng}`,
-      radius: '50000',
-      types: 'address|establishment|geocode',
-    });
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params}`
-    );
-    const json = await res.json();
-    if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
-      console.warn('Places autocomplete error:', json.status, json.error_message);
-    }
-    return (json.predictions || []).slice(0, 6).map(p => ({
-      address: p.description,
-      place_id: p.place_id,
-      lat: null,
-      lng: null,
-    }));
-  } catch (e) {
-    console.warn('searchAddress error:', e);
-    return [];
-  }
-}
-
-// Récupère les coordonnées d'un place_id (appelé seulement au clic)
-async function getPlaceCoords(placeId) {
-  try {
-    const params = new URLSearchParams({
-      place_id: placeId,
-      fields: 'geometry,formatted_address',
-      key: GOOGLE_KEY,
-      language: 'fr',
-    });
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?${params}`
-    );
-    const json = await res.json();
-    const loc = json.result?.geometry?.location;
-    return {
-      address: json.result?.formatted_address || null,
-      lat: loc?.lat || null,
-      lng: loc?.lng || null,
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-// Reverse geocode — adresse depuis coordonnées GPS
-async function reverseGeocode(lat, lng) {
-  try {
-    const params = new URLSearchParams({
-      latlng: `${lat},${lng}`,
-      key: GOOGLE_KEY,
-      language: 'fr',
-      result_type: 'street_address|route|locality',
-    });
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?${params}`
-    );
-    const json = await res.json();
-    if (json.status === 'OK' && json.results?.length > 0) {
-      return json.results[0].formatted_address;
-    }
-    console.warn('Geocode error:', json.status);
-    return null;
-  } catch (e) {
-    return null;
-  }
-}
 
 // ───────────────────────────────────────────────────────────────
 
@@ -176,11 +117,11 @@ export default function BookingScreen({ navigation }) {
           lat = pos.coords.latitude;
           lng = pos.coords.longitude;
         }
-        const addr = await reverseGeocode(lat, lng);
-        if (addr) {
-          const short = addr.split(',').slice(0, 2).join(',').trim();
+        const geo = await reverseGeocodeAddr(lat, lng);
+        if (geo) {
+          const short = geo.shortAddress || geo.address.split(',').slice(0, 2).join(',').trim();
           setPickupText(short);
-          setPickup({ address: short, lat, lng });
+          setPickup({ address: geo.address, lat, lng });
         } else {
           setPickupText('Ma position actuelle');
           setPickup({ address: 'Ma position actuelle', lat, lng });
@@ -228,11 +169,11 @@ export default function BookingScreen({ navigation }) {
     if (activeField === 'pickup') setPickupText(item.address);
     else setDropoffText(item.address);
 
-    // Récupérer les coords via place_id si nécessaire
+    // Récupérer les coords via place_id
     let finalItem = item;
-    if (item.place_id && (!item.lat || !item.lng)) {
-      const coords = await getPlaceCoords(item.place_id);
-      if (coords) finalItem = { ...item, ...coords };
+    if (item.placeId && (!item.lat || !item.lng)) {
+      const coords = await getPlaceCoords(item.placeId);
+      if (coords) finalItem = { address: coords.address || item.address, lat: coords.lat, lng: coords.lng };
     }
 
     if (activeField === 'pickup') {

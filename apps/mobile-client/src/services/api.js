@@ -68,6 +68,7 @@ export const ridesAPI = {
   nearbyDrivers: (lat, lng) => api.get(`/rides/nearby-drivers?lat=${lat}&lng=${lng}`),
   autocomplete: (q, lat, lng) => api.get(`/rides/geocode/autocomplete?q=${encodeURIComponent(q)}&lat=${lat}&lng=${lng}`),
   reverseGeocode: (lat, lng) => api.get(`/rides/geocode/reverse?lat=${lat}&lng=${lng}`),
+  placeDetails: (placeId) => api.get(`/rides/geocode/details?place_id=${encodeURIComponent(placeId)}`),
   sos: (id) => api.post(`/rides/${id}/sos`),
 };
 

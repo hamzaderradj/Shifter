@@ -127,7 +127,7 @@ router.get('/me', authenticate, async (req, res) => {
 
     // Calcul note moyenne depuis les ratings reçus
     const ratings = await prisma.rating.findMany({
-      where: { toUserId: req.user.id }
+      where: { toUser: req.user.id }
     });
     const avgRating = ratings.length > 0
       ? parseFloat((ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(2))

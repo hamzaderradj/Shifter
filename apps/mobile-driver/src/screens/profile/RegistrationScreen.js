@@ -264,6 +264,17 @@ export default function RegistrationScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
+
+      {/* Bouton déconnexion d'urgence */}
+      <TouchableOpacity
+        style={styles.logoutBtn}
+        onPress={() => {
+          const { logout } = useDriverAuthStore.getState();
+          logout();
+        }}
+      >
+        <Text style={styles.logoutText}>Se déconnecter</Text>
+      </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
@@ -339,4 +350,7 @@ const styles = StyleSheet.create({
   successSection: { alignItems: 'center', paddingTop: SPACING.xl * 2, gap: SPACING.md },
   successTitle: { fontSize: 26, fontWeight: '800', color: COLORS.text },
   successText: { fontSize: 15, color: COLORS.textSub, textAlign: 'center', lineHeight: 24 },
+
+  logoutBtn: { padding: 16, alignItems: 'center' },
+  logoutText: { fontSize: 13, color: COLORS.textMuted, textDecorationLine: 'underline' },
 });

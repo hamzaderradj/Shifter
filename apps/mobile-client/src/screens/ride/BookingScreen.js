@@ -7,32 +7,41 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import { useMapStore, useRideStore } from '../../store';
+import { COLORS } from '../../utils/theme';
+import { joinRide, initSocket, getSocket } from '../../services/socket';
 import { ridesAPI, usersAPI } from '../../services/api';
 
-// ── Wrappers geocoding → backend ────────────────────────────────
+// ── Geocoding via backend ──────────────────────────────────────
 async function searchAddress(query, lat, lng) {
   try {
     const { data } = await ridesAPI.autocomplete(query, lat || 48.8566, lng || 2.3522);
     return data.results || [];
-  } catch { return []; }
+  } catch (e) {
+    console.warn('searchAddress error:', e?.message);
+    return [];
+  }
 }
 
 async function getPlaceCoords(placeId) {
   try {
     const { data } = await ridesAPI.placeDetails(placeId);
     return data.result || null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn('getPlaceCoords error:', e?.message);
+    return null;
+  }
 }
 
 async function reverseGeocodeAddr(lat, lng) {
   try {
     const { data } = await ridesAPI.reverseGeocode(lat, lng);
     return data.result || null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn('reverseGeocode error:', e?.message);
+    return null;
+  }
 }
-import { useMapStore, useRideStore } from '../../store';
-import { COLORS } from '../../utils/theme';
-import { joinRide, initSocket, getSocket } from '../../services/socket';
 
 // ── Calcul de distance (formule Haversine) ──────────────────────
 function haversineKm(lat1, lon1, lat2, lon2) {

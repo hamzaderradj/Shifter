@@ -12,67 +12,61 @@ import { COLORS } from '../../utils/theme';
 import { joinRide, initSocket, getSocket } from '../../services/socket';
 import { ridesAPI, usersAPI } from '../../services/api';
 
-// ── Google Maps — appels directs (pas de CORS en React Native) ──
-const GKEY = 'AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU';
+// ── Geocoding via Nominatim (OSM) — gratuit, sans clé ──────────
+const NOMINATIM = 'https://nominatim.openstreetmap.org';
+const NOM_HEADERS = { 'User-Agent': 'ShifterApp/1.0', 'Accept-Language': 'fr' };
 
 async function searchAddress(query, lat, lng) {
   if (!query || query.length < 3) return [];
   try {
-    const loc = (lat && lng) ? `${lat},${lng}` : '48.8566,2.3522';
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GKEY}&language=fr&components=country:fr&location=${loc}&radius=50000`;
-    const res = await fetch(url);
+    const params = new URLSearchParams({
+      q: query,
+      format: 'json',
+      limit: '6',
+      addressdetails: '1',
+      countrycodes: 'fr',
+      ...(lat && lng ? { viewbox: `${lng - 0.5},${lat + 0.5},${lng + 0.5},${lat - 0.5}` } : {}),
+    });
+    const res = await fetch(`${NOMINATIM}/search?${params}`, { headers: NOM_HEADERS });
     const json = await res.json();
-    if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
-      console.warn('[autocomplete]', json.status, json.error_message);
-      return [];
-    }
-    return (json.predictions || []).slice(0, 6).map(p => ({
-      placeId: p.place_id,
-      address: p.description,
-      shortName: p.structured_formatting?.main_text || p.description.split(',')[0],
-      lat: null,
-      lng: null,
-    }));
+    return json.map(item => {
+      const a = item.address || {};
+      const num = a.house_number || '';
+      const street = a.road || a.pedestrian || a.footway || '';
+      const city = a.city || a.town || a.village || a.suburb || '';
+      const postcode = a.postcode || '';
+      const line1 = num && street ? `${num} ${street}` : street || item.display_name.split(',')[0];
+      const line2 = postcode && city ? `${postcode} ${city}` : city;
+      return {
+        address: line2 ? `${line1}, ${line2}` : line1,
+        lat: parseFloat(item.lat),
+        lng: parseFloat(item.lon),
+      };
+    });
   } catch (e) {
-    console.warn('[autocomplete] error:', e.message);
+    console.warn('[searchAddress] error:', e.message);
     return [];
-  }
-}
-
-async function getPlaceCoords(placeId) {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GKEY}&language=fr`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status !== 'OK') return null;
-    const loc = json.result?.geometry?.location;
-    return {
-      address: json.result?.formatted_address,
-      lat: loc?.lat,
-      lng: loc?.lng,
-    };
-  } catch (e) {
-    console.warn('[placeDetails] error:', e.message);
-    return null;
   }
 }
 
 async function reverseGeocodeAddr(lat, lng) {
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GKEY}&language=fr&result_type=street_address|route`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status !== 'OK' || !json.results?.length) {
-      console.warn('[reverseGeocode]', json.status, json.error_message);
-      return null;
-    }
-    const result = json.results[0];
-    const comps = result.address_components || [];
-    const route = comps.find(c => c.types.includes('route'))?.long_name;
-    const city = comps.find(c => c.types.includes('locality'))?.long_name;
+    const res = await fetch(
+      `${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+      { headers: NOM_HEADERS }
+    );
+    const item = await res.json();
+    if (!item || item.error) return null;
+    const a = item.address || {};
+    const num = a.house_number || '';
+    const street = a.road || a.pedestrian || a.footway || '';
+    const city = a.city || a.town || a.village || a.suburb || '';
+    const postcode = a.postcode || '';
+    const line1 = num && street ? `${num} ${street}` : street || item.display_name.split(',')[0];
+    const line2 = postcode && city ? `${postcode} ${city}` : city;
     return {
-      address: result.formatted_address,
-      shortAddress: [route, city].filter(Boolean).join(', ') || result.formatted_address.split(',').slice(0, 2).join(','),
+      address: item.display_name,
+      shortAddress: line2 ? `${line1}, ${line2}` : line1,
     };
   } catch (e) {
     console.warn('[reverseGeocode] error:', e.message);
@@ -215,12 +209,8 @@ export default function BookingScreen({ navigation }) {
     if (activeField === 'pickup') setPickupText(item.address);
     else setDropoffText(item.address);
 
-    // Récupérer les coords via place_id
+    // Nominatim retourne directement lat/lng dans les suggestions
     let finalItem = item;
-    if (item.placeId && (!item.lat || !item.lng)) {
-      const coords = await getPlaceCoords(item.placeId);
-      if (coords) finalItem = { address: coords.address || item.address, lat: coords.lat, lng: coords.lng };
-    }
 
     if (activeField === 'pickup') {
       setPickupText(finalItem.address);

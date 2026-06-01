@@ -19,11 +19,14 @@ export default function PhoneScreen() {
   };
 
   const handleSend = async () => {
-    if (phone.replace(/\s/g, '').length < 9) return;
+    const raw = phone.replace(/\s/g, '');
+    if (raw.length < 9) return;
     setLoading(true);
     try {
-      await authAPI.sendOtp('+33' + phone.replace(/\s/g, ''));
-      navigation.navigate('OTP', { phone: '+33' + phone.replace(/\s/g, '') });
+      const normalized = raw.startsWith('0') ? raw.slice(1) : raw;
+      const fullPhone = '+33' + normalized;
+      await authAPI.sendOtp(fullPhone);
+      navigation.navigate('OTP', { phone: fullPhone });
     } catch {
       alert("Erreur lors de l'envoi du code");
     } finally {

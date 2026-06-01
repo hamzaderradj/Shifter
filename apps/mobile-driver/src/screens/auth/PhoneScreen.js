@@ -27,7 +27,9 @@ export default function DriverPhoneScreen() {
     if (raw.length < 9) return;
     setLoading(true);
     try {
-      const fullPhone = '+33' + raw;
+      // Supprimer le 0 initial si présent (06xxx → +336xxx)
+      const normalized = raw.startsWith('0') ? raw.slice(1) : raw;
+      const fullPhone = '+33' + normalized;
       await fetch(`${API_URL}/api/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

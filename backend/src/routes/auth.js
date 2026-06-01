@@ -16,7 +16,9 @@ router.post('/send-otp',
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
     try {
-      const { phone } = req.body;
+      // Normaliser le numéro : +330699... → +33699...
+      let phone = req.body.phone;
+      if (phone.startsWith('+330')) phone = '+33' + phone.slice(4);
       const result = await sendOtp(phone);
       res.json({ success: true, message: 'Code OTP envoyé', expiresAt: result.expiresAt });
     } catch (err) {
@@ -35,7 +37,9 @@ router.post('/verify-otp',
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
     try {
-      const { phone, code, firstName, lastName } = req.body;
+      let { phone, code, firstName, lastName } = req.body;
+      // Normaliser le numéro : +330699... → +33699...
+      if (phone && phone.startsWith('+330')) phone = '+33' + phone.slice(4);
 
       const otpResult = await verifyOtp(phone, code);
       if (!otpResult.success) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, ActivityIndicator, StatusBar, ScrollView,
@@ -35,30 +35,6 @@ export default function RegistrationScreen({ navigation }) {
   const { updateDriver } = useDriverAuthStore();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
-
-  // ── Vérifier au montage si le chauffeur est déjà inscrit ───────
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await driverAPI.getMe();
-        if (data.driver?.id) {
-          updateDriver(data.driver);
-          navigation.replace('MainTabs');
-          return;
-        }
-      } catch {}
-      setChecking(false);
-    })();
-  }, []);
-
-  if (checking) {
-    return (
-      <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
   const [vehicle, setVehicle] = useState({ make: '', model: '', year: '', plate: '', color: '' });
   const [uploadedDocs, setUploadedDocs] = useState({});
 

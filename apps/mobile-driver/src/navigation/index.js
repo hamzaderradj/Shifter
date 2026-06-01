@@ -108,12 +108,39 @@ function AuthStack() {
 }
 
 function AppStack() {
-  const { driver } = useDriverAuthStore();
-  // Si le chauffeur n'a pas encore de profil → écran d'inscription en premier
-  const initialRouteName = driver?.id ? 'MainTabs' : 'Registration';
+  const { driver, updateDriver } = useDriverAuthStore();
+  const [ready, setReady] = React.useState(false);
+  const [hasDriver, setHasDriver] = React.useState(!!driver?.id);
+
+  React.useEffect(() => {
+    // Toujours vérifier le vrai profil depuis le serveur au démarrage
+    const { driverAPI } = require('../services/api');
+    driverAPI.getMe()
+      .then(({ data }) => {
+        if (data.driver?.id) {
+          updateDriver(data.driver);
+          setHasDriver(true);
+        } else {
+          setHasDriver(false);
+        }
+      })
+      .catch(() => {
+        // Si le serveur ne répond pas, utiliser ce qui est en cache
+        setHasDriver(!!driver?.id);
+      })
+      .finally(() => setReady(true));
+  }, []);
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, backgroundColor: DARK.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={DARK.primary} />
+      </View>
+    );
+  }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={hasDriver ? 'MainTabs' : 'Registration'}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="Registration" component={RegistrationScreen} />
       <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />

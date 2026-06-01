@@ -245,10 +245,8 @@ app.use((err, req, res, next) => {
 });
 
 // ── Keep-alive (évite le sleep Render free tier) ──────────────
-const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${config.port}`;
-setInterval(() => {
-  http.get(`${SELF_URL}/api/health`).on('error', () => {});
-}, 10 * 60 * 1000); // ping toutes les 10 min
+// UptimeRobot s'en charge déjà — pas besoin d'un ping interne
+// (le http.get() natif ne supporte pas https, on supprime ce bloc)
 
 // ── Démarrage ─────────────────────────────────────────────────
 server.listen(config.port, () => {

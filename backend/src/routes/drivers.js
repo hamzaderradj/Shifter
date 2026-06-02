@@ -146,20 +146,28 @@ router.put('/availability', authenticate, requireDriver,
     try {
       const { availability } = req.body;
 
-      const driver = await prisma.driver.update({
+      // Lire le driver via raw SQL pour avoir search_radius (pas dans le schema Prisma)
+      const [driverRaw] = await prisma.$queryRaw`
+        SELECT id, current_lat, current_lng, availability,
+               COALESCE(search_radius, 5) as search_radius
+        FROM drivers WHERE id = ${req.user.driver.id}
+      `;
+      await prisma.driver.update({
         where: { id: req.user.driver.id },
         data: { availability }
       });
+      const driver = driverRaw;
+      const searchRadius = Math.min(Math.max(parseInt(driver.search_radius) || 5, 1), 20);
 
+      // Notifier uniquement l'admin room (pas broadcast global)
       const io = req.app.get('io');
-      if (io) io.emit('driver_availability_changed', {
+      if (io) io.to('admin_room').emit('driver_availability_changed', {
         driverId: driver.id,
-        availability: driver.availability
+        availability
       });
 
-      // Si le chauffeur passe EN LIGNE et a une position connue,
-      // lui envoyer les courses en attente à proximité (max 10 min, rayon 5 km)
-      if (availability === 'online' && driver.currentLat && driver.currentLng) {
+      // Si le chauffeur passe EN LIGNE et a une position connue
+      if (availability === 'online' && driver.current_lat && driver.current_lng) {
         const pendingRides = await prisma.$queryRaw`
           SELECT r.id, r.pickup_address, r.pickup_lat, r.pickup_lng,
                  r.dropoff_address, r.dropoff_lat, r.dropoff_lng,
@@ -172,11 +180,11 @@ router.put('/availability', authenticate, requireDriver,
             AND r.created_at > NOW() - INTERVAL '10 minutes'
             AND (
               6371 * acos(
-                cos(radians(${driver.currentLat})) * cos(radians(r.pickup_lat)) *
-                cos(radians(r.pickup_lng) - radians(${driver.currentLng})) +
-                sin(radians(${driver.currentLat})) * sin(radians(r.pickup_lat))
+                cos(radians(${driver.current_lat})) * cos(radians(r.pickup_lat)) *
+                cos(radians(r.pickup_lng) - radians(${driver.current_lng})) +
+                sin(radians(${driver.current_lat})) * sin(radians(r.pickup_lat))
               )
-            ) <= LEAST(COALESCE(${driver.searchRadius ?? 5}, 5), 20)
+            ) <= ${searchRadius}
           ORDER BY r.created_at DESC
           LIMIT 3
         `;
@@ -215,7 +223,7 @@ router.put('/availability', authenticate, requireDriver,
         }
       }
 
-      res.json({ success: true, driver });
+      res.json({ success: true, driver: { ...driver, availability, searchRadius } });
     } catch (err) {
       console.error('[AVAILABILITY]', err);
       res.status(500).json({ success: false, message: 'Erreur serveur' });

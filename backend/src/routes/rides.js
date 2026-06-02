@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { body, query, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const { authenticate, requireDriver } = require('../middleware/auth');
+const { rideLimiter } = require('../middleware/rateLimit');
 const { estimateRide } = require('../services/pricing');
 const { autocomplete, getPlaceDetails, reverseGeocode } = require('../services/geocoding');
 const {
@@ -73,8 +74,8 @@ router.get('/nearby-drivers', authenticate, async (req, res) => {
 });
 
 // ── POST /rides ──────────────────────────────────────────────
-router.post('/', authenticate,
-  body('pickupAddress').notEmpty(),
+router.post('/', authenticate, rideLimiter,
+  body('pickupAddress').notEmpty().isLength({ max: 500 }),
   body('pickupLat').isFloat(),
   body('pickupLng').isFloat(),
   body('dropoffAddress').notEmpty(),

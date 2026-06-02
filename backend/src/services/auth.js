@@ -34,7 +34,8 @@ const sendOtp = async (phone) => {
       if (config.env === 'production') throw err;
     }
   } else {
-    console.log(`[DEV OTP] ${phone} → ${code}`);
+    // Ne jamais logger le code OTP en entier — masquer partiellement
+    console.log(`[DEV OTP] ${phone.slice(0, 6)}*** → ${code.slice(0, 3)}***`);
   }
 
   return { success: true, expiresAt };
@@ -61,8 +62,12 @@ const verifyOtp = async (phone, code) => {
 };
 
 // ── JWT ───────────────────────────────────────────────────────
-const generateTokens = async (userId) => {
-  const accessToken = jwt.sign({ userId }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+const generateTokens = async (userId, expiresIn = config.jwt.expiresIn) => {
+  if (!config.jwt.secret || config.jwt.secret === 'dev-secret-change-in-prod') {
+    console.error('[SECURITY] JWT_SECRET non configuré ou utilise la valeur par défaut !');
+    if (config.env === 'production') throw new Error('JWT_SECRET non sécurisé en production');
+  }
+  const accessToken = jwt.sign({ userId }, config.jwt.secret, { expiresIn });
   const refreshTokenValue = crypto.randomBytes(64).toString('hex');
 
   await prisma.refreshToken.create({

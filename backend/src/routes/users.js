@@ -81,8 +81,8 @@ router.put('/notifications/read-all', authenticate, async (req, res) => {
 
 // ── POST /users/support ───────────────────────────────────────
 router.post('/support', authenticate,
-  body('subject').notEmpty().trim(),
-  body('message').notEmpty().trim(),
+  body('subject').notEmpty().trim().isLength({ max: 200 }).escape(),
+  body('message').notEmpty().trim().isLength({ max: 2000 }),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -107,6 +107,7 @@ router.post('/support', authenticate,
 router.post('/report', authenticate,
   body('reportedUserId').notEmpty(),
   body('reason').isIn(['inappropriate_behavior', 'fraud', 'safety_concern', 'bad_rating', 'other']),
+  body('description').optional().trim().isLength({ max: 1000 }),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -148,9 +149,9 @@ router.post('/sos', authenticate, async (req, res) => {
       }
     });
 
-    // Notifier les admins via socket
+    // Notifier UNIQUEMENT les admins connectés (pas tous les sockets)
     const io = req.app.get('io');
-    if (io) io.emit('sos_alert', { alert });
+    if (io) io.to('admin_room').emit('sos_alert', { alert });
 
     res.status(201).json({ success: true, alert });
   } catch (err) {

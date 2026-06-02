@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const { sendOtp, verifyOtp, generateTokens, refreshAccessToken, revokeRefreshToken } = require('../services/auth');
 const { authenticate } = require('../middleware/auth');
-const { otpLimiter } = require('../middleware/rateLimit');
+const { otpLimiter, adminLoginLimiter } = require('../middleware/rateLimit');
 
 const prisma = new PrismaClient();
 
@@ -114,9 +114,11 @@ router.post('/verify-otp',
           }
         });
       } else {
+        // isActive: true → un OTP réussi réactive toujours le compte
+        // (évite les blocages accidentels via le panel admin)
         await prisma.user.update({
           where: { id: user.id },
-          data: { isVerified: true, lastLoginAt: new Date() }
+          data: { isVerified: true, isActive: true, lastLoginAt: new Date() }
         });
       }
 
@@ -172,39 +174,51 @@ router.post('/logout', authenticate, async (req, res) => {
 });
 
 // ── POST /auth/admin-login ──────────────────────────────────
-// Connexion email + mot de passe pour les 2 admins (comptes fixes)
 router.post('/admin-login',
-  body('email').isEmail().withMessage('Email invalide'),
-  body('password').notEmpty().withMessage('Mot de passe requis'),
+  adminLoginLimiter, // 5 tentatives / 15 min — protection brute force
+  body('email').isEmail().normalizeEmail().withMessage('Email invalide'),
+  body('password').notEmpty().isLength({ min: 6 }).withMessage('Mot de passe requis'),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
+    // Délai fixe pour éviter le timing attack (même durée si email inconnu ou mdp faux)
+    await new Promise(r => setTimeout(r, 200));
+
     try {
       const { email, password } = req.body;
 
-      // 2 comptes admin fixes (mot de passe en clair, privé côté serveur)
+      // Credentials admin depuis variables d'environnement UNIQUEMENT
+      // Si ADMIN_1_PASSWORD n'est pas défini → blocage total (pas de fallback)
       const ADMINS = [
-        {
-          email: 'samyderradj57@gmail.com',
-          password: process.env.ADMIN_1_PASSWORD || 'Smy9380',
-          username: 'Samy15',
-          firstName: 'Samy',
-          lastName: 'Derradj',
-        },
-        {
-          email: 'hamza.derradjpro@gmail.com',
-          password: process.env.ADMIN_2_PASSWORD || 'Hmz9380',
-          username: 'Hamza03',
-          firstName: 'Hamza',
-          lastName: 'Derradj',
-        },
-      ];
+        process.env.ADMIN_1_EMAIL && process.env.ADMIN_1_PASSWORD ? {
+          email: process.env.ADMIN_1_EMAIL,
+          password: process.env.ADMIN_1_PASSWORD,
+          username: process.env.ADMIN_1_USERNAME || 'Admin1',
+          firstName: process.env.ADMIN_1_FIRSTNAME || 'Admin',
+          lastName: process.env.ADMIN_1_LASTNAME || '1',
+        } : null,
+        process.env.ADMIN_2_EMAIL && process.env.ADMIN_2_PASSWORD ? {
+          email: process.env.ADMIN_2_EMAIL,
+          password: process.env.ADMIN_2_PASSWORD,
+          username: process.env.ADMIN_2_USERNAME || 'Admin2',
+          firstName: process.env.ADMIN_2_FIRSTNAME || 'Admin',
+          lastName: process.env.ADMIN_2_LASTNAME || '2',
+        } : null,
+      ].filter(Boolean);
+
+      if (ADMINS.length === 0) {
+        console.error('[ADMIN LOGIN] Variables ADMIN_x_EMAIL / ADMIN_x_PASSWORD non configurées');
+        return res.status(503).json({ success: false, message: 'Service temporairement indisponible' });
+      }
 
       const adminDef = ADMINS.find(
         a => a.email.toLowerCase() === email.trim().toLowerCase()
       );
+
+      // Message identique qu'il s'agisse d'un email inconnu ou d'un mauvais mot de passe (anti-enumération)
       if (!adminDef || adminDef.password !== password) {
+        console.warn(`[ADMIN LOGIN] Échec pour ${email} depuis ${req.ip}`);
         return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect' });
       }
 
@@ -235,7 +249,17 @@ router.post('/admin-login',
         await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
       }
 
-      const { accessToken, refreshToken } = await generateTokens(user.id);
+      // JWT admin avec durée courte — 8h (pas 7j comme les users mobiles)
+      const { accessToken, refreshToken } = await generateTokens(user.id, '8h');
+
+      // Audit log du succès de connexion admin
+      console.log(`[ADMIN LOGIN] Connexion réussie: ${adminDef.email} depuis ${req.ip}`);
+      await prisma.$executeRaw`
+        INSERT INTO admin_audit_logs (admin_id, action, target_type, details, ip, created_at)
+        VALUES (${user.id}, 'admin_login', 'auth',
+          ${JSON.stringify({ email: adminDef.email, userAgent: req.headers['user-agent'] })}::jsonb,
+          ${req.ip}, NOW())
+      `.catch(() => {}); // Non bloquant
 
       res.json({
         success: true,
@@ -252,7 +276,8 @@ router.post('/admin-login',
       });
     } catch (err) {
       console.error('[Admin Login Error]', err.message);
-      res.status(500).json({ success: false, message: 'Erreur serveur : ' + err.message });
+      // Ne pas exposer les détails d'erreur interne en prod
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }
 );

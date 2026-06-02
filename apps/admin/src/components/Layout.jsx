@@ -55,12 +55,37 @@ function NavSection({ title, items, sidebarOpen, adminRole }) {
   );
 }
 
+const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8h — aligné sur le JWT admin
+
 export default function Layout() {
   const { user, adminRole, logout } = useAuthStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const timeoutRef = React.useRef(null);
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = React.useCallback(() => {
+    logout();
+    navigate('/login');
+  }, [logout, navigate]);
+
+  // Auto-logout après inactivité
+  const resetTimer = React.useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      alert('Session expirée pour raison de sécurité. Veuillez vous reconnecter.');
+      handleLogout();
+    }, SESSION_TIMEOUT_MS);
+  }, [handleLogout]);
+
+  React.useEffect(() => {
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer(); // Démarre le timer au montage
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [resetTimer]);
 
   const sections = [
     {

@@ -23,15 +23,34 @@ const initSocket = require('./socket');
 const app = express();
 const server = http.createServer(app);
 
-// ── Socket.io ─────────────────────────────────────────────────
+// ── Vérifications de sécurité au démarrage ────────────────────
+if (config.env === 'production') {
+  const criticalVars = ['JWT_SECRET', 'ADMIN_1_EMAIL', 'ADMIN_1_PASSWORD', 'DATABASE_URL'];
+  const missing = criticalVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    console.error(`[SECURITY] Variables critiques manquantes: ${missing.join(', ')}`);
+  }
+  if (process.env.JWT_SECRET === 'dev-secret-change-in-prod') {
+    console.error('[SECURITY] CRITIQUE: JWT_SECRET utilise la valeur par défaut en production!');
+  }
+  if (process.env.OTP_BYPASS_DEV === 'true') {
+    console.error('[SECURITY] CRITIQUE: OTP_BYPASS_DEV est activé en production!');
+  }
+}
+
+// ── CORS — origines strictement définies ──────────────────────
 const ALLOWED_ORIGINS = [
-  config.frontendUrl,
   'http://localhost:5173',
   'http://localhost:8081',
   'http://localhost:19006',
+  // Admin panel — URL exacte uniquement (pas de wildcard Netlify)
   'https://shifter-admin.netlify.app',
+  // Variable d'env pour permettre une URL custom en prod
+  ...(process.env.ADMIN_URL ? [process.env.ADMIN_URL] : []),
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  // Expo Go en développement
   /^exp:\/\//,
-  /^https:\/\/.*\.netlify\.app$/,
+  /^https:\/\/u\.expo\.dev/,
 ];
 
 const io = new Server(server, {
@@ -48,7 +67,27 @@ initSocket(io);
 app.set('io', io);
 
 // ── Middlewares ───────────────────────────────────────────────
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", 'unpkg.com'], // Pour la page de tracking Leaflet
+      styleSrc:  ["'self'", "'unsafe-inline'", 'unpkg.com'],
+      imgSrc:    ["'self'", 'data:', '*.tile.openstreetmap.org', '*.supabase.co'],
+      connectSrc: ["'self'", '*.supabase.co', 'api.expo.dev'],
+      fontSrc:   ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"], // Interdit l'embedding dans des iframes
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 an
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 app.use(compression());
 app.use(cors({
   origin: ALLOWED_ORIGINS,
@@ -232,15 +271,25 @@ app.use((req, res) => {
 
 // ── Gestion des erreurs globale ───────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('[ERROR]', err);
+  // Logger l'erreur complète côté serveur uniquement
+  const errorId = Date.now().toString(36);
+  console.error(`[ERROR:${errorId}]`, {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    error: err.message,
+    stack: config.env !== 'production' ? err.stack : undefined,
+  });
 
   if (err.type === 'entity.too.large') {
     return res.status(413).json({ success: false, message: 'Fichier trop volumineux' });
   }
 
+  // En production : jamais de stack trace ou message interne
   res.status(err.status || 500).json({
     success: false,
-    message: config.env === 'production' ? 'Erreur serveur interne' : err.message
+    message: config.env === 'production' ? 'Une erreur est survenue' : err.message,
+    errorId, // Permet de retrouver l'erreur dans les logs sans exposer les détails
   });
 });
 

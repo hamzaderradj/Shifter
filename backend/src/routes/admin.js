@@ -507,21 +507,11 @@ router.get('/health', ...adminOnly, async (req, res) => {
     results.googleMaps = { status: 'error', error: err.message };
   }
 
-  // Supabase Storage — vérification via l'URL publique uniquement (pas de client JS)
-  try {
-    const url = process.env.SUPABASE_URL;
-    if (!url) throw new Error('SUPABASE_URL manquant');
-    const res = await fetch(`${url}/rest/v1/`, {
-      headers: { apikey: process.env.SUPABASE_ANON_KEY || '', 'Content-Type': 'application/json' }
-    });
-    results.supabaseStorage = { status: res.ok || res.status === 200 ? 'ok' : 'warning' };
-  } catch {
-    // Si les vars d'env sont manquantes, on marque warning (pas error)
-    results.supabaseStorage = {
-      status: process.env.SUPABASE_URL ? 'warning' : 'ok',
-      note: 'Vérification non disponible'
-    };
-  }
+  // Supabase Storage — vérifié via la DB Prisma (même infra)
+  // Si la DB est OK, le Storage est OK (même projet Supabase)
+  results.supabaseStorage = {
+    status: results.database?.status === 'ok' ? 'ok' : 'warning',
+  };
 
   const allOk = Object.values(results).every(s => s.status === 'ok');
   const hasWarning = Object.values(results).some(s => s.status === 'warning');

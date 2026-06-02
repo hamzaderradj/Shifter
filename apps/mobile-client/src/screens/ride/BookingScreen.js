@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import Constants from 'expo-constants';
 import { useMapStore, useRideStore } from '../../store';
 import { COLORS } from '../../utils/theme';
 import { joinRide, initSocket, getSocket } from '../../services/socket';

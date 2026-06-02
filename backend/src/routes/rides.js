@@ -24,7 +24,7 @@ router.post('/estimate', authenticate,
 
     try {
       const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
-      const estimate = estimateRide(pickupLat, pickupLng, dropoffLat, dropoffLng);
+      const estimate = await estimateRide(pickupLat, pickupLng, dropoffLat, dropoffLng);
       res.json({ success: true, estimate });
     } catch (err) {
       res.status(500).json({ success: false, message: 'Erreur estimation' });
@@ -100,7 +100,7 @@ router.post('/', authenticate,
         return res.status(409).json({ success: false, message: 'Course déjà en cours', rideId: activeRide.id });
       }
 
-      const estimate = estimateRide(pickupLat, pickupLng, dropoffLat, dropoffLng);
+      const estimate = await estimateRide(pickupLat, pickupLng, dropoffLat, dropoffLng);
 
       const ride = await prisma.ride.create({
         data: {

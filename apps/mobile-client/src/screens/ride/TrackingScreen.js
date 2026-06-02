@@ -11,6 +11,7 @@ import { ridesAPI, usersAPI } from '../../services/api';
 import * as Location from 'expo-location';
 import { initSocket, getSocket, joinRide, subscribeToDriver, unsubscribeFromDriver } from '../../services/socket';
 import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
+import { fetchRoute } from '../../utils/googleDirections';
 
 const STATUS_CONFIG = {
   searching:        { icon: 'search', label: 'Recherche d\'un chauffeur...', color: COLORS.warning },
@@ -29,6 +30,7 @@ export default function TrackingScreen({ navigation, route }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const { activeRide, setActiveRide, rideStatus, updateRideStatus, driverLocation, setDriverLocation, clearRide } = useRideStore();
   const [ride, setRide] = useState(activeRide);
+  const [routeCoords, setRouteCoords] = useState([]);
 
   // Animation de pulsation pour "recherche"
   useEffect(() => {
@@ -106,7 +108,16 @@ export default function TrackingScreen({ navigation, route }) {
       });
     };
 
-    setup();
+    setup().then(() => {
+      // Charger l'itinéraire réel dès que la course est chargée
+      const r = rideRef.current;
+      if (r?.pickupLat && r?.dropoffLat) {
+        fetchRoute(
+          parseFloat(r.pickupLat), parseFloat(r.pickupLng),
+          parseFloat(r.dropoffLat), parseFloat(r.dropoffLng)
+        ).then(coords => { if (coords) setRouteCoords(coords); });
+      }
+    });
 
     return () => {
       // Cleanup : retirer les listeners spécifiques à cet écran
@@ -229,14 +240,21 @@ export default function TrackingScreen({ navigation, route }) {
             </View>
           </Marker>
         )}
-        {pickupCoord && dropoffCoord && (
+        {/* Route réelle Google Directions — fallback ligne droite si pas encore chargé */}
+        {routeCoords.length > 1 ? (
+          <Polyline
+            coordinates={routeCoords}
+            strokeColor={COLORS.primary}
+            strokeWidth={4}
+          />
+        ) : pickupCoord && dropoffCoord ? (
           <Polyline
             coordinates={[pickupCoord, dropoffCoord]}
             strokeColor={COLORS.primary}
             strokeWidth={3}
             lineDashPattern={[10, 5]}
           />
-        )}
+        ) : null}
       </MapView>
 
       {/* Bouton retour */}

@@ -1,8 +1,7 @@
 const config = require('../config');
 
 /**
- * Calcule la distance entre deux coordonnées GPS (formule Haversine)
- * @returns distance en kilomètres
+ * Haversine — distance à vol d'oiseau (fallback si Routes API indisponible)
  */
 const haversineDistance = (lat1, lng1, lat2, lng2) => {
   const R = 6371;
@@ -16,48 +15,90 @@ const haversineDistance = (lat1, lng1, lat2, lng2) => {
 };
 
 /**
- * Estimation du temps de trajet (simple, basé sur vitesse moto ~30 km/h en ville)
+ * Google Routes API — vraie distance routière + durée en trafic réel
+ * Retourne { distanceKm, durationMinutes } ou null si erreur
+ */
+const getRouteFromGoogle = async (originLat, originLng, destLat, destLng) => {
+  const key = process.env.GOOGLE_MAPS_KEY;
+  if (!key) return null;
+
+  try {
+    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
+      },
+      body: JSON.stringify({
+        origin:      { location: { latLng: { latitude: parseFloat(originLat), longitude: parseFloat(originLng) } } },
+        destination: { location: { latLng: { latitude: parseFloat(destLat),   longitude: parseFloat(destLng)   } } },
+        travelMode: 'DRIVE',
+        routingPreference: 'TRAFFIC_AWARE_OPTIMAL',
+        units: 'METRIC',
+      }),
+    });
+
+    const data = await res.json();
+    const route = data.routes?.[0];
+    if (!route) return null;
+
+    const distanceKm      = route.distanceMeters / 1000;
+    const durationSeconds = parseInt(route.duration?.replace('s', '') || '0');
+    const durationMinutes = Math.ceil(durationSeconds / 60);
+
+    return { distanceKm, durationMinutes };
+  } catch (err) {
+    console.warn('[Routes API] erreur:', err.message);
+    return null;
+  }
+};
+
+/**
+ * Durée estimée (fallback Haversine — moto ~30 km/h en ville)
  */
 const estimateDuration = (distanceKm) => Math.ceil((distanceKm / 30) * 60);
 
 /**
- * Calcule le prix estimé d'une course
+ * Calcul du prix
  */
 const calculatePrice = (distanceKm, durationMinutes) => {
   const { baseFare, pricePerKm, pricePerMinute, minFare } = config.pricing;
-  const raw = baseFare + (distanceKm * pricePerKm) + (durationMinutes * pricePerMinute);
+  const raw   = baseFare + (distanceKm * pricePerKm) + (durationMinutes * pricePerMinute);
   const price = Math.max(raw, minFare);
-  return Math.round(price * 100) / 100; // arrondi à 2 décimales (euros)
+  return Math.round(price * 100) / 100;
 };
 
-/**
- * Calcule la commission plateforme
- */
-const platformFee = (price) => Math.round(price * config.pricing.platformCommission);
+const platformFee    = (price) => Math.round(price * config.pricing.platformCommission * 100) / 100;
+const driverEarnings = (price) => Math.round((price - platformFee(price)) * 100) / 100;
 
 /**
- * Calcule les gains chauffeur
+ * Estimation complète — utilise Google Routes API, fallback Haversine
  */
-const driverEarnings = (price) => price - platformFee(price);
+const estimateRide = async (pickupLat, pickupLng, dropoffLat, dropoffLng) => {
+  // Essayer Google Routes API d'abord
+  const google = await getRouteFromGoogle(pickupLat, pickupLng, dropoffLat, dropoffLng);
 
-/**
- * Estimation complète pour l'affichage client
- */
-const estimateRide = (pickupLat, pickupLng, dropoffLat, dropoffLng) => {
-  const distanceKm = haversineDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  const durationMinutes = estimateDuration(distanceKm);
-  const price = calculatePrice(distanceKm, durationMinutes);
+  const distanceKm      = google ? Math.round(google.distanceKm * 100) / 100
+                                 : Math.round(haversineDistance(pickupLat, pickupLng, dropoffLat, dropoffLng) * 100) / 100;
+  const durationMinutes = google ? google.durationMinutes
+                                 : estimateDuration(distanceKm);
+  const price           = calculatePrice(distanceKm, durationMinutes);
 
   return {
-    distanceKm: Math.round(distanceKm * 100) / 100,
+    distanceKm,
     durationMinutes,
     estimatedPrice: price,
+    source: google ? 'google_routes' : 'haversine', // debug
     breakdown: {
-      baseFare: config.pricing.baseFare,
-      distanceFare: Math.round(distanceKm * config.pricing.pricePerKm),
-      timeFare: Math.round(durationMinutes * config.pricing.pricePerMinute),
+      baseFare:     config.pricing.baseFare,
+      distanceFare: Math.round(distanceKm * config.pricing.pricePerKm * 100) / 100,
+      timeFare:     Math.round(durationMinutes * config.pricing.pricePerMinute * 100) / 100,
     }
   };
 };
 
-module.exports = { haversineDistance, estimateDuration, calculatePrice, estimateRide, platformFee, driverEarnings };
+module.exports = {
+  haversineDistance, estimateDuration, calculatePrice,
+  estimateRide, getRouteFromGoogle, platformFee, driverEarnings
+};

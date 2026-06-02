@@ -12,73 +12,78 @@ import { COLORS } from '../../utils/theme';
 import { joinRide, initSocket, getSocket } from '../../services/socket';
 import { ridesAPI, usersAPI } from '../../services/api';
 
-// ── Geocoding via Nominatim (OSM) — gratuit, sans clé ──────────
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const NOM_HEADERS = { 'User-Agent': 'ShifterApp/1.0', 'Accept-Language': 'fr' };
+// ── Google Maps APIs ────────────────────────────────────────────
+const GMAPS_KEY = Constants.expoConfig?.extra?.googleMapsKey;
+const PLACES_URL  = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
+const DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
+const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
+// Autocomplétion adresse → liste de suggestions avec placeId
 async function searchAddress(query, lat, lng) {
   if (!query || query.length < 2) return [];
   try {
     const params = new URLSearchParams({
-      q: query,
-      format: 'json',
-      limit: '8',
-      addressdetails: '1',
-      countrycodes: 'fr',
-      'accept-language': 'fr',
-      dedupe: '1',
-      ...(lat && lng ? {
-        viewbox: `${lng - 0.3},${lat + 0.3},${lng + 0.3},${lat - 0.3}`,
-        bounded: '0',
-      } : {}),
+      input: query,
+      key: GMAPS_KEY,
+      language: 'fr',
+      components: 'country:fr',
+      types: 'geocode|establishment',
+      ...(lat && lng ? { location: `${lat},${lng}`, radius: '30000' } : {}),
     });
-    const res = await fetch(`${NOMINATIM}/search?${params}`, { headers: NOM_HEADERS });
+    const res = await fetch(`${PLACES_URL}?${params}`);
     const json = await res.json();
-    const seen = new Set();
-    return json
-      .map(item => {
-        const a = item.address || {};
-        const num = a.house_number || '';
-        const street = a.road || a.pedestrian || a.footway || a.path || a.cycleway || '';
-        const city = a.city || a.town || a.village || a.municipality || a.suburb || a.county || '';
-        const postcode = a.postcode || '';
-        const line1 = num && street
-          ? `${num} ${street}`
-          : street || item.display_name.split(',')[0].trim();
-        const line2 = [postcode, city].filter(Boolean).join(' ');
-        const address = line2 ? `${line1}, ${line2}` : line1;
-        return { address, lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
-      })
-      .filter(item => {
-        const key = `${item.lat.toFixed(4)},${item.lng.toFixed(4)}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return item.address.length > 3;
-      });
+    if (!['OK', 'ZERO_RESULTS'].includes(json.status)) {
+      console.warn('[Places]', json.status, json.error_message);
+      return [];
+    }
+    return (json.predictions || []).map(p => ({
+      address: p.description,
+      placeId: p.place_id,
+      lat: null, // récupéré via place details à la sélection
+      lng: null,
+    }));
   } catch (e) {
     console.warn('[searchAddress] error:', e.message);
     return [];
   }
 }
 
+// Détails d'un lieu → lat/lng précis
+async function getPlaceDetails(placeId) {
+  const params = new URLSearchParams({
+    place_id: placeId,
+    fields: 'geometry,formatted_address',
+    key: GMAPS_KEY,
+    language: 'fr',
+  });
+  const res = await fetch(`${DETAILS_URL}?${params}`);
+  const json = await res.json();
+  if (json.status !== 'OK') throw new Error(`Place Details: ${json.status}`);
+  const loc = json.result.geometry.location;
+  return {
+    address: json.result.formatted_address,
+    lat: loc.lat,
+    lng: loc.lng,
+  };
+}
+
+// Reverse geocoding GPS → adresse
 async function reverseGeocodeAddr(lat, lng) {
   try {
-    const res = await fetch(
-      `${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
-      { headers: NOM_HEADERS }
-    );
-    const item = await res.json();
-    if (!item || item.error) return null;
-    const a = item.address || {};
-    const num = a.house_number || '';
-    const street = a.road || a.pedestrian || a.footway || '';
-    const city = a.city || a.town || a.village || a.suburb || '';
-    const postcode = a.postcode || '';
-    const line1 = num && street ? `${num} ${street}` : street || item.display_name.split(',')[0];
-    const line2 = postcode && city ? `${postcode} ${city}` : city;
+    const params = new URLSearchParams({ latlng: `${lat},${lng}`, key: GMAPS_KEY, language: 'fr' });
+    const res = await fetch(`${GEOCODE_URL}?${params}`);
+    const json = await res.json();
+    if (json.status !== 'OK' || !json.results[0]) return null;
+    const result = json.results[0];
+    const comp = result.address_components || [];
+    const get  = (type) => comp.find(c => c.types.includes(type))?.long_name || '';
+    const num    = get('street_number');
+    const street = get('route');
+    const city   = get('locality') || get('administrative_area_level_2');
+    const short  = [num, street].filter(Boolean).join(' ') + (city ? `, ${city}` : '');
     return {
-      address: item.display_name,
-      shortAddress: line2 ? `${line1}, ${line2}` : line1,
+      address: result.formatted_address,
+      shortAddress: short || result.formatted_address.split(',')[0].trim(),
     };
   } catch (e) {
     console.warn('[reverseGeocode] error:', e.message);
@@ -217,12 +222,21 @@ export default function BookingScreen({ navigation }) {
   const selectSuggestion = async (item) => {
     Keyboard.dismiss();
     setSuggestions([]);
-    // Afficher l'adresse tout de suite
+    // Afficher l'adresse immédiatement (avant le chargement des coords)
     if (activeField === 'pickup') setPickupText(item.address);
     else setDropoffText(item.address);
 
-    // Nominatim retourne directement lat/lng dans les suggestions
     let finalItem = item;
+
+    // Google Places retourne un placeId → appel Place Details pour les coords
+    if (item.placeId) {
+      try {
+        finalItem = await getPlaceDetails(item.placeId);
+      } catch (e) {
+        console.warn('[selectSuggestion] Place Details error:', e.message);
+        return; // garder l'affichage du texte mais pas définir les coords
+      }
+    }
 
     if (activeField === 'pickup') {
       setPickupText(finalItem.address);

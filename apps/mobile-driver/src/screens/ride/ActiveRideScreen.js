@@ -3,13 +3,14 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   Alert, Linking, StatusBar, ActivityIndicator, Modal, Vibration
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { ridesAPI, driverAPI } from '../../services/api';
 import { useDriverStatusStore, useEarningsStore } from '../../store';
 import { COLORS, SPACING, RADIUS, SHADOW } from '../../utils/theme';
+import { fetchRoute } from '../../utils/googleDirections';
 
 // ── Haversine distance (km) ────────────────────────────────────
 function haversine(lat1, lon1, lat2, lon2) {
@@ -78,6 +79,7 @@ export default function ActiveRideScreen({ navigation, route }) {
   const [ride, setRide] = useState(initialRide || null);
   const [loading, setLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
+  const [routeCoords, setRouteCoords] = useState([]);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [ratingScore, setRatingScore] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -132,6 +134,23 @@ export default function ActiveRideScreen({ navigation, route }) {
   // Reset auto-arrived si le statut revient à driver_en_route (edge case)
   useEffect(() => {
     if (ride?.status === 'driver_en_route') autoArrivedRef.current = false;
+  }, [ride?.status]);
+
+  // Charger la vraie route selon la phase (pickup ou dropoff)
+  useEffect(() => {
+    if (!ride) return;
+    const step = STEPS[ride.status];
+    if (!step) return;
+    const isPickup = step.mapTarget !== 'dropoff';
+
+    // Origine = position chauffeur si disponible, sinon pickup
+    const originLat = driverLocation?.latitude  ?? parseFloat(ride.pickupLat);
+    const originLng = driverLocation?.longitude ?? parseFloat(ride.pickupLng);
+    const destLat   = isPickup ? parseFloat(ride.pickupLat)  : parseFloat(ride.dropoffLat);
+    const destLng   = isPickup ? parseFloat(ride.pickupLng)  : parseFloat(ride.dropoffLng);
+
+    fetchRoute(originLat, originLng, destLat, destLng)
+      .then(coords => { if (coords) setRouteCoords(coords); });
   }, [ride?.status]);
 
   // Centrer la carte selon le statut
@@ -355,6 +374,14 @@ export default function ActiveRideScreen({ navigation, route }) {
               <Ionicons name="flag" size={14} color="#fff" />
             </View>
           </Marker>
+        )}
+        {/* Route réelle Google Directions */}
+        {routeCoords.length > 1 && (
+          <Polyline
+            coordinates={routeCoords}
+            strokeColor={COLORS.primary}
+            strokeWidth={4}
+          />
         )}
       </MapView>
 

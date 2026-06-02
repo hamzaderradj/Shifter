@@ -109,29 +109,31 @@ function AuthStack() {
 
 function AppStack() {
   const { driver, updateDriver } = useDriverAuthStore();
-  const [ready, setReady] = React.useState(false);
-  const [hasDriver, setHasDriver] = React.useState(!!driver?.id);
+  // null = en cours de vérification, 'MainTabs' ou 'Registration' une fois résolu
+  const [initialRoute, setInitialRoute] = React.useState(null);
 
   React.useEffect(() => {
-    // Toujours vérifier le vrai profil depuis le serveur au démarrage
     const { driverAPI } = require('../services/api');
+
     driverAPI.getMe()
       .then(({ data }) => {
         if (data.driver?.id) {
           updateDriver(data.driver);
-          setHasDriver(true);
+          setInitialRoute('MainTabs');
         } else {
-          setHasDriver(false);
+          setInitialRoute('Registration');
         }
       })
       .catch(() => {
-        // Si le serveur ne répond pas, utiliser ce qui est en cache
-        setHasDriver(!!driver?.id);
-      })
-      .finally(() => setReady(true));
+        // Serveur injoignable → fallback sur le store local
+        // On relit le store au moment de l'erreur (pas de closure stale)
+        const cached = useDriverAuthStore.getState().driver;
+        setInitialRoute(cached?.id ? 'MainTabs' : 'Registration');
+      });
   }, []);
 
-  if (!ready) {
+  // Spinner pendant la vérification serveur
+  if (!initialRoute) {
     return (
       <View style={{ flex: 1, backgroundColor: DARK.bg, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={DARK.primary} />
@@ -140,7 +142,7 @@ function AppStack() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={hasDriver ? 'MainTabs' : 'Registration'}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="Registration" component={RegistrationScreen} />
       <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />

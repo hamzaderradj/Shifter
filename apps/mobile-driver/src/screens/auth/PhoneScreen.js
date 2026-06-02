@@ -4,13 +4,15 @@ import {
   KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { COLORS, RADIUS } from '../../utils/theme';
 
 const API_URL = 'https://shifter-bmbf.onrender.com';
 
 export default function DriverPhoneScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const mode = route.params?.mode || 'login'; // 'login' | 'register'
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -35,7 +37,7 @@ export default function DriverPhoneScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: fullPhone, role: 'driver' }),
       });
-      navigation.navigate('OTP', { phone: fullPhone });
+      navigation.navigate('OTP', { phone: fullPhone, mode });
     } catch {
       setError("Erreur réseau. Vérifie ta connexion.");
     } finally {
@@ -60,8 +62,14 @@ export default function DriverPhoneScreen() {
           <View style={styles.iconWrap}>
             <Ionicons name="phone-portrait-outline" size={30} color={COLORS.primary} />
           </View>
-          <Text style={styles.title}>Ton numéro{'\n'}de téléphone</Text>
-          <Text style={styles.subtitle}>On t'envoie un code pour confirmer ton identité</Text>
+          <Text style={styles.title}>
+            {mode === 'register' ? 'Inscription\nchauffeur' : 'Connexion\nchauffeur'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {mode === 'register'
+              ? 'Entre ton numéro pour créer ton compte Shifter Rider'
+              : 'Entre ton numéro pour te connecter à ton compte'}
+          </Text>
 
           <View style={styles.inputRow}>
             <View style={styles.countryBox}>

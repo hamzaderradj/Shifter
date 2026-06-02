@@ -63,13 +63,24 @@ export default function DriverWelcomeScreen() {
 
       {/* CTA */}
       <View style={styles.bottom}>
+        {/* Bouton principal : nouveau chauffeur */}
         <TouchableOpacity
           style={styles.btnPrimary}
-          onPress={() => navigation.navigate('Phone')}
+          onPress={() => navigation.navigate('Phone', { mode: 'register' })}
           activeOpacity={0.88}
         >
-          <Text style={styles.btnPrimaryText}>Commencer maintenant</Text>
-          <Ionicons name="arrow-forward" size={20} color={COLORS.bg} />
+          <Ionicons name="bicycle" size={20} color={COLORS.bg} />
+          <Text style={styles.btnPrimaryText}>Devenir chauffeur Shifter</Text>
+        </TouchableOpacity>
+
+        {/* Bouton secondaire : déjà inscrit */}
+        <TouchableOpacity
+          style={styles.btnSecondary}
+          onPress={() => navigation.navigate('Phone', { mode: 'login' })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="log-in-outline" size={18} color={COLORS.primary} />
+          <Text style={styles.btnSecondaryText}>J'ai déjà un compte</Text>
         </TouchableOpacity>
 
         <Text style={styles.legal}>
@@ -128,7 +139,7 @@ const styles = StyleSheet.create({
   featTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 3 },
   featSub: { fontSize: 12, color: COLORS.textSub },
 
-  bottom: { paddingHorizontal: 20, paddingBottom: 24, gap: 16 },
+  bottom: { paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
   btnPrimary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, paddingVertical: 17,
@@ -137,6 +148,14 @@ const styles = StyleSheet.create({
   },
   btnPrimaryText: { fontSize: 17, fontWeight: '800', color: COLORS.bg },
 
-  legal: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center', lineHeight: 17 },
+  btnSecondary: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: RADIUS.xl, paddingVertical: 15,
+    borderWidth: 1.5, borderColor: COLORS.primary,
+    backgroundColor: 'rgba(46,204,113,0.06)',
+  },
+  btnSecondaryText: { fontSize: 16, fontWeight: '700', color: COLORS.primary },
+
+  legal: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center', lineHeight: 17, marginTop: 4 },
   legalLink: { color: COLORS.textSub, fontWeight: '600' },
 });

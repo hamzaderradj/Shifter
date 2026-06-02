@@ -38,6 +38,18 @@ export default function RegistrationScreen({ navigation }) {
   const [vehicle, setVehicle] = useState({ make: '', model: '', year: '', plate: '', color: '' });
   const [uploadedDocs, setUploadedDocs] = useState({});
 
+  // ── Filet de sécurité : si déjà inscrit → MainTabs directement ─
+  React.useEffect(() => {
+    driverAPI.getMe()
+      .then(({ data }) => {
+        if (data.driver?.id) {
+          updateDriver(data.driver);
+          navigation.replace('MainTabs');
+        }
+      })
+      .catch(() => {}); // Pas de profil → rester sur RegistrationScreen
+  }, []);
+
   // ── Étape 1 : soumettre les infos véhicule ─────────────────────
   const handleVehicleNext = async () => {
     if (!vehicle.make || !vehicle.model || !vehicle.plate || !vehicle.color) {

@@ -16,9 +16,7 @@ router.post('/send-otp',
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
     try {
-      // Normaliser le numéro : +330699... → +33699...
-      let phone = req.body.phone;
-      if (phone.startsWith('+330')) phone = '+33' + phone.slice(4);
+      const phone = normalizePhone(req.body.phone);
       const result = await sendOtp(phone);
       res.json({ success: true, message: 'Code OTP envoyé', expiresAt: result.expiresAt });
     } catch (err) {
@@ -27,6 +25,32 @@ router.post('/send-otp',
     }
   }
 );
+
+// ── Helpers normalisation numéro téléphone ──────────────────
+function normalizePhone(phone) {
+  if (!phone) return phone;
+  let p = phone.replace(/[\s\-\(\)\.]/g, '');
+  // +330XXXXXXXX → +33XXXXXXXX
+  if (p.startsWith('+330')) p = '+33' + p.slice(4);
+  // 0XXXXXXXXX (10 chiffres) → +33XXXXXXXXX
+  if (/^0\d{9}$/.test(p)) p = '+33' + p.slice(1);
+  // 33XXXXXXXXX sans + → +33XXXXXXXXX
+  if (/^33\d{9}$/.test(p)) p = '+' + p;
+  return p;
+}
+
+function getAlternativeFormats(phone) {
+  const fmts = new Set();
+  if (phone.startsWith('+33') && !phone.startsWith('+330')) {
+    fmts.add('+330' + phone.slice(3));   // +33X → +330X (ancien format)
+    fmts.add('0' + phone.slice(3));      // +33X → 0X   (format local)
+    fmts.add(phone.slice(1));            // +33X → 33X  (sans +)
+  }
+  if (phone.startsWith('+330')) {
+    fmts.add('+33' + phone.slice(4));   // +330X → +33X
+  }
+  return Array.from(fmts);
+}
 
 // ── POST /auth/verify-otp ───────────────────────────────────
 router.post('/verify-otp',
@@ -38,16 +62,46 @@ router.post('/verify-otp',
 
     try {
       let { phone, code, firstName, lastName } = req.body;
-      // Normaliser le numéro : +330699... → +33699...
-      if (phone && phone.startsWith('+330')) phone = '+33' + phone.slice(4);
 
-      const otpResult = await verifyOtp(phone, code);
+      // Normaliser le numéro (format canonique +33XXXXXXXXX)
+      phone = normalizePhone(phone);
+
+      // Vérifier l'OTP — si bypass dev, accepter 123456 pour tout numéro
+      let otpResult = await verifyOtp(phone, code);
+
+      // Si OTP non trouvé avec le numéro normalisé, essayer les formats alternatifs
+      // (l'OTP a peut-être été créé avec un ancien format stocké)
+      if (!otpResult.success) {
+        for (const alt of getAlternativeFormats(phone)) {
+          otpResult = await verifyOtp(alt, code);
+          if (otpResult.success) break;
+        }
+      }
+
       if (!otpResult.success) {
         return res.status(400).json({ success: false, message: otpResult.message });
       }
 
-      // Trouver ou créer l'utilisateur
+      // ── Trouver l'utilisateur — lookup résilient ───────────
       let user = await prisma.user.findUnique({ where: { phone } });
+
+      // Pas trouvé avec le format normalisé → essayer les formats alternatifs
+      // (numéro stocké en DB dans un ancien format)
+      if (!user) {
+        for (const altPhone of getAlternativeFormats(phone)) {
+          user = await prisma.user.findFirst({ where: { phone: altPhone } });
+          if (user) {
+            // Auto-corriger le numéro en DB vers le format canonique
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { phone }
+            }).catch(() => {}); // Non bloquant
+            console.log(`[AUTH] Numéro corrigé en DB: ${altPhone} → ${phone} (userId: ${user.id})`);
+            break;
+          }
+        }
+      }
+
       const isNewUser = !user;
 
       if (!user) {
@@ -68,6 +122,15 @@ router.post('/verify-otp',
 
       const { accessToken, refreshToken } = await generateTokens(user.id);
 
+      // Inclure le profil driver directement dans la réponse (évite un 2ème appel)
+      const driver = await prisma.driver.findUnique({
+        where: { userId: user.id },
+        include: {
+          documents: true,
+          user: { select: { firstName: true, lastName: true, phone: true, avatarUrl: true } }
+        }
+      });
+
       res.json({
         success: true,
         isNewUser,
@@ -80,7 +143,8 @@ router.post('/verify-otp',
           lastName: user.lastName,
           role: user.role,
           avatarUrl: user.avatarUrl,
-        }
+        },
+        driver: driver || null,
       });
     } catch (err) {
       console.error(err);

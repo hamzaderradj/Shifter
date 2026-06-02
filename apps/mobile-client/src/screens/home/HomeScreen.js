@@ -20,7 +20,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { userLocation, setUserLocation } = useMapStore();
-  const { setActiveRide } = useRideStore();
+  const { setActiveRide, skippedRideIds } = useRideStore();
   const mapRef = useRef(null);
   const [favorites, setFavorites] = useState([]);
 
@@ -37,10 +37,13 @@ export default function HomeScreen() {
       } catch {}
       try {
         const { data } = await ridesAPI.getUnrated();
-        if (data.ride) navigation.navigate('Rating', { rideId: data.ride.id });
+        // Ne pas rediriger si le client a déjà skippé cette notation
+        if (data.ride && !skippedRideIds.includes(data.ride.id)) {
+          navigation.navigate('Rating', { rideId: data.ride.id });
+        }
       } catch {}
     })();
-  }, []));
+  }, [skippedRideIds]));
 
   // GPS
   useEffect(() => {

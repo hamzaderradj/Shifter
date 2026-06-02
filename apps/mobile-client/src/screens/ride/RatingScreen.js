@@ -9,7 +9,7 @@ import { COLORS, SPACING, SIZES, RADIUS, SHADOWS } from '../../utils/theme';
 export default function RatingScreen({ navigation, route }) {
   const { rideId } = route.params;
   const insets = useSafeAreaInsets();
-  const { clearRide } = useRideStore();
+  const { clearRide, skipRating } = useRideStore();
   const [score, setScore] = useState(0);
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,6 +31,7 @@ export default function RatingScreen({ navigation, route }) {
   };
 
   const handleSkip = () => {
+    skipRating(rideId); // marque ce ride comme "ignoré" → HomeScreen ne redirigera plus
     clearRide();
     navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
   };

@@ -61,6 +61,7 @@ export const driverAPI = {
     return api.post('/drivers/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   setAvailability: (availability) => api.put('/drivers/availability', { availability }),
+  setRadius: (radius) => api.put('/drivers/radius', { radius }),
   updateLocation: (lat, lng, speed, heading) => api.put('/drivers/location', { lat, lng, speed, heading }),
   getRequests: () => api.get('/drivers/requests'),
   getEarnings: (period = 'week') => api.get(`/drivers/earnings?period=${period}`),

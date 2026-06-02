@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, StatusBar, ScrollView, Alert,
+  SafeAreaView, StatusBar, ScrollView, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -29,11 +29,13 @@ const MenuItem = ({ icon, label, subtitle, onPress, danger, value, badge }) => (
 
 export default function DriverProfileScreen() {
   const navigation = useNavigation();
-  const { driver, logout } = useDriverAuthStore();
+  const { driver, logout, updateDriver } = useDriverAuthStore();
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [monthEarnings, setMonthEarnings] = useState(0);
   const [totalTrips, setTotalTrips] = useState(0);
   const [avgRating, setAvgRating] = useState(null);
+  const [showRadiusModal, setShowRadiusModal] = useState(false);
+  const [selectedRadius, setSelectedRadius] = useState(driver?.searchRadius ?? 5);
 
   useFocusEffect(useCallback(() => {
     const fetchStats = async () => {
@@ -63,6 +65,17 @@ export default function DriverProfileScreen() {
   };
 
   const soon = (f) => Alert.alert(f, 'Disponible dans la prochaine version.', [{ text: 'OK' }]);
+
+  const saveRadius = async (km) => {
+    try {
+      await driverAPI.setRadius(km);
+      updateDriver({ ...driver, searchRadius: km });
+      setSelectedRadius(km);
+      setShowRadiusModal(false);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sauvegarder le rayon.');
+    }
+  };
 
   const firstName = driver?.firstName || 'Chauffeur';
   const lastName = driver?.lastName || '';
@@ -134,10 +147,45 @@ export default function DriverProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Préférences</Text>
+          <MenuItem
+            icon="radio-outline"
+            label="Rayon de réception"
+            subtitle="Distance max pour recevoir des courses"
+            value={`${selectedRadius} km`}
+            onPress={() => setShowRadiusModal(true)}
+          />
           <MenuItem icon="notifications-outline" label="Notifications" onPress={() => soon('Notifications')} />
           <MenuItem icon="language-outline" label="Langue" value="Français" onPress={() => soon('Langue')} />
           <MenuItem icon="shield-outline" label="Sécurité" onPress={() => soon('Sécurité')} />
         </View>
+
+        {/* Modal choix du rayon */}
+        <Modal visible={showRadiusModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Rayon de réception des courses</Text>
+              <Text style={styles.modalSub}>Tu recevras les demandes dans ce rayon autour de toi</Text>
+              <View style={styles.radiusGrid}>
+                {[1, 2, 3, 5, 8, 10, 15, 20].map(km => (
+                  <TouchableOpacity
+                    key={km}
+                    style={[styles.radiusBtn, selectedRadius === km && styles.radiusBtnActive]}
+                    onPress={() => saveRadius(km)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.radiusBtnText, selectedRadius === km && styles.radiusBtnTextActive]}>
+                      {km} km
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowRadiusModal(false)}>
+                <Text style={styles.modalCancelText}>Annuler</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <View style={styles.section}>
           <MenuItem icon="log-out-outline" label="Se déconnecter" onPress={handleLogout} danger />
@@ -221,4 +269,27 @@ const styles = StyleSheet.create({
   badgeText: { color: COLORS.bg, fontSize: 11, fontWeight: '800' },
 
   version: { textAlign: 'center', fontSize: 12, color: COLORS.textMuted, paddingVertical: 24 },
+
+  // Modal rayon
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: COLORS.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: COLORS.border,
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border,
+    alignSelf: 'center', marginBottom: 20,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
+  modalSub: { fontSize: 13, color: COLORS.textSub, marginBottom: 24 },
+  radiusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  radiusBtn: {
+    paddingHorizontal: 18, paddingVertical: 12, borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.bgInput,
+  },
+  radiusBtnActive: { borderColor: COLORS.primary, backgroundColor: 'rgba(46,204,113,0.12)' },
+  radiusBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.textSub },
+  radiusBtnTextActive: { color: COLORS.primary },
+  modalCancel: { alignItems: 'center', paddingVertical: 12 },
+  modalCancelText: { color: COLORS.textSub, fontWeight: '600', fontSize: 15 },
 });

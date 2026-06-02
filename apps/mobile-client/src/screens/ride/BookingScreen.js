@@ -17,32 +17,44 @@ const NOMINATIM = 'https://nominatim.openstreetmap.org';
 const NOM_HEADERS = { 'User-Agent': 'ShifterApp/1.0', 'Accept-Language': 'fr' };
 
 async function searchAddress(query, lat, lng) {
-  if (!query || query.length < 3) return [];
+  if (!query || query.length < 2) return [];
   try {
     const params = new URLSearchParams({
       q: query,
       format: 'json',
-      limit: '6',
+      limit: '8',
       addressdetails: '1',
       countrycodes: 'fr',
-      ...(lat && lng ? { viewbox: `${lng - 0.5},${lat + 0.5},${lng + 0.5},${lat - 0.5}` } : {}),
+      'accept-language': 'fr',
+      dedupe: '1',
+      ...(lat && lng ? {
+        viewbox: `${lng - 0.3},${lat + 0.3},${lng + 0.3},${lat - 0.3}`,
+        bounded: '0',
+      } : {}),
     });
     const res = await fetch(`${NOMINATIM}/search?${params}`, { headers: NOM_HEADERS });
     const json = await res.json();
-    return json.map(item => {
-      const a = item.address || {};
-      const num = a.house_number || '';
-      const street = a.road || a.pedestrian || a.footway || '';
-      const city = a.city || a.town || a.village || a.suburb || '';
-      const postcode = a.postcode || '';
-      const line1 = num && street ? `${num} ${street}` : street || item.display_name.split(',')[0];
-      const line2 = postcode && city ? `${postcode} ${city}` : city;
-      return {
-        address: line2 ? `${line1}, ${line2}` : line1,
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon),
-      };
-    });
+    const seen = new Set();
+    return json
+      .map(item => {
+        const a = item.address || {};
+        const num = a.house_number || '';
+        const street = a.road || a.pedestrian || a.footway || a.path || a.cycleway || '';
+        const city = a.city || a.town || a.village || a.municipality || a.suburb || a.county || '';
+        const postcode = a.postcode || '';
+        const line1 = num && street
+          ? `${num} ${street}`
+          : street || item.display_name.split(',')[0].trim();
+        const line2 = [postcode, city].filter(Boolean).join(' ');
+        const address = line2 ? `${line1}, ${line2}` : line1;
+        return { address, lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
+      })
+      .filter(item => {
+        const key = `${item.lat.toFixed(4)},${item.lng.toFixed(4)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return item.address.length > 3;
+      });
   } catch (e) {
     console.warn('[searchAddress] error:', e.message);
     return [];

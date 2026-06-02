@@ -176,7 +176,7 @@ router.put('/availability', authenticate, requireDriver,
                 cos(radians(r.pickup_lng) - radians(${driver.currentLng})) +
                 sin(radians(${driver.currentLat})) * sin(radians(r.pickup_lat))
               )
-            ) <= 5
+            ) <= LEAST(COALESCE(${driver.searchRadius ?? 5}, 5), 20)
           ORDER BY r.created_at DESC
           LIMIT 3
         `;
@@ -218,6 +218,23 @@ router.put('/availability', authenticate, requireDriver,
       res.json({ success: true, driver });
     } catch (err) {
       console.error('[AVAILABILITY]', err);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  }
+);
+
+// ── PUT /drivers/radius ───────────────────────────────────────
+router.put('/radius', authenticate, requireDriver,
+  body('radius').isInt({ min: 1, max: 20 }),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+    try {
+      const driver = await prisma.$executeRaw`
+        UPDATE drivers SET search_radius = ${req.body.radius} WHERE id = ${req.user.driver.id}
+      `;
+      res.json({ success: true, searchRadius: req.body.radius });
+    } catch (err) {
       res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }

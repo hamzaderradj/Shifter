@@ -52,6 +52,7 @@ export const useRideStore = create((set) => ({
   isSearching: false,
   nearbyDrivers: [],
   chatMessages: [],
+  skippedRideIds: [], // rideIds dont la notation a été ignorée
 
   setActiveRide: (ride) => set({ activeRide: ride, rideStatus: ride?.status }),
   updateRideStatus: (status) => set((state) => ({
@@ -62,6 +63,9 @@ export const useRideStore = create((set) => ({
   setIsSearching: (searching) => set({ isSearching: searching }),
   setNearbyDrivers: (drivers) => set({ nearbyDrivers: drivers }),
   addChatMessage: (msg) => set((state) => ({ chatMessages: [...state.chatMessages, msg] })),
+  skipRating: (rideId) => set((state) => ({
+    skippedRideIds: [...new Set([...state.skippedRideIds, rideId])]
+  })),
   clearRide: () => set({ activeRide: null, rideStatus: null, driverLocation: null, isSearching: false, chatMessages: [] }),
 }));
 

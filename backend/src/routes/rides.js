@@ -121,7 +121,7 @@ router.post('/', authenticate,
         include: { client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } } }
       });
 
-      // Trouver les chauffeurs proches et les notifier via Socket.io (ciblé)
+      // Trouver les chauffeurs proches — rayon personnalisé par chauffeur (défaut 5km, max 20km)
       const nearbyDrivers = await prisma.$queryRaw`
         SELECT d.id as driver_id, d.user_id FROM drivers d
         WHERE d.status = 'approved' AND d.availability = 'online'
@@ -130,7 +130,7 @@ router.post('/', authenticate,
             cos(radians(${pickupLat})) * cos(radians(d.current_lat)) *
             cos(radians(d.current_lng) - radians(${pickupLng})) +
             sin(radians(${pickupLat})) * sin(radians(d.current_lat))
-          )) <= 5
+          )) <= LEAST(COALESCE(d.search_radius, 5), 20)
       `;
 
       const io = req.app.get('io');
@@ -197,7 +197,7 @@ router.get('/active', authenticate, async (req, res) => {
 // Retourne la course la plus récente terminée et non notée par le client (dans les 24h)
 router.get('/unrated', authenticate, async (req, res) => {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h
+    const since = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h
 
     const ride = await prisma.ride.findFirst({
       where: {

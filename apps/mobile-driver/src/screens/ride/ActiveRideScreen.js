@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, Linking, StatusBar, ActivityIndicator, Modal
+  Alert, Linking, StatusBar, ActivityIndicator, Modal, Vibration
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -82,6 +82,8 @@ export default function ActiveRideScreen({ navigation, route }) {
   const [ratingScore, setRatingScore] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const completedRideRef = useRef(null);
+  const rideRef = useRef(ride); // ref pour accès dans callback GPS sans closure stale
+  useEffect(() => { rideRef.current = ride; }, [ride]);
 
   // Charger les données fraîches de la course
   useEffect(() => {
@@ -91,19 +93,46 @@ export default function ActiveRideScreen({ navigation, route }) {
     }).catch(() => {});
   }, [rideId]);
 
-  // GPS en temps réel (pour géofencing)
+  // GPS en temps réel (géofencing + auto-arrived)
+  const autoArrivedRef = useRef(false); // évite le double-déclenchement
   useEffect(() => {
     let sub = null;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 20 },
-        (loc) => setDriverLocation(loc.coords)
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 4000, distanceInterval: 15 },
+        (loc) => {
+          const coords = loc.coords;
+          setDriverLocation(coords);
+
+          // Auto-trigger "arrived" quand le chauffeur est à moins de 300m du pickup
+          const currentRide = rideRef.current;
+          if (
+            currentRide?.status === 'driver_en_route' &&
+            !autoArrivedRef.current &&
+            currentRide.pickupLat && currentRide.pickupLng
+          ) {
+            const dist = haversine(
+              coords.latitude, coords.longitude,
+              parseFloat(currentRide.pickupLat), parseFloat(currentRide.pickupLng)
+            );
+            if (dist <= 0.3) { // 300 mètres
+              autoArrivedRef.current = true;
+              Vibration.vibrate([0, 300, 100, 300]);
+              updateStatus('arrived');
+            }
+          }
+        }
       );
     })();
     return () => { if (sub) sub.remove(); };
   }, []);
+
+  // Reset auto-arrived si le statut revient à driver_en_route (edge case)
+  useEffect(() => {
+    if (ride?.status === 'driver_en_route') autoArrivedRef.current = false;
+  }, [ride?.status]);
 
   // Centrer la carte selon le statut
   useEffect(() => {

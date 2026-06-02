@@ -290,18 +290,22 @@ router.get('/:id', authenticate, async (req, res) => {
 // ── POST /rides/:id/accept (chauffeur) ───────────────────────
 router.post('/:id/accept', authenticate, requireDriver, async (req, res) => {
   try {
-    const ride = await prisma.ride.findUnique({ where: { id: req.params.id } });
-    if (!ride || ride.status !== 'searching') {
-      return res.status(409).json({ success: false, message: 'Course non disponible' });
-    }
-
-    const updatedRide = await prisma.ride.update({
-      where: { id: req.params.id },
-      data: { driverId: req.user.driver.id, status: 'accepted', acceptedAt: new Date() },
-      include: {
-        client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } },
-        driver: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } }
+    // Transaction atomique — élimine la race condition si deux chauffeurs acceptent simultanément
+    const updatedRide = await prisma.$transaction(async (tx) => {
+      const current = await tx.ride.findUnique({ where: { id: req.params.id } });
+      if (!current || current.status !== 'searching') {
+        const err = new Error('Course non disponible');
+        err.code = 'RIDE_NOT_AVAILABLE';
+        throw err;
       }
+      return tx.ride.update({
+        where: { id: req.params.id },
+        data: { driverId: req.user.driver.id, status: 'accepted', acceptedAt: new Date() },
+        include: {
+          client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } },
+          driver: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } }
+        }
+      });
     });
 
     // Marquer le chauffeur comme occupé
@@ -314,13 +318,16 @@ router.post('/:id/accept', authenticate, requireDriver, async (req, res) => {
     if (io) io.to(`ride_${req.params.id}`).emit('ride_accepted', { ride: updatedRide });
 
     notifyRideAccepted(
-      ride.clientId,
-      ride.id,
+      updatedRide.clientId,
+      updatedRide.id,
       `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim()
     );
 
     res.json({ success: true, ride: updatedRide });
   } catch (err) {
+    if (err.code === 'RIDE_NOT_AVAILABLE') {
+      return res.status(409).json({ success: false, message: 'Course non disponible' });
+    }
     console.error(err);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
@@ -372,11 +379,20 @@ router.post('/:id/status', authenticate, async (req, res) => {
       data: updateData
     });
 
-    // Libérer le chauffeur si course terminée/annulée
+    // Libérer le chauffeur + mettre à jour les compteurs si terminé/annulé
     if (['completed', 'cancelled'].includes(status) && ride.driver) {
+      const driverUpdate = { availability: 'online' };
+
+      if (status === 'completed') {
+        const price = parseFloat(updatedRide.finalPrice || ride.estimatedPrice || 0);
+        const earnings = price * (1 - (parseFloat(process.env.PLATFORM_COMMISSION) || 0.20));
+        driverUpdate.totalRides    = { increment: 1 };
+        driverUpdate.totalEarnings = { increment: Math.round(earnings * 100) / 100 };
+      }
+
       await prisma.driver.update({
         where: { id: ride.driver.id },
-        data: { availability: 'online' }
+        data: driverUpdate
       });
     }
 

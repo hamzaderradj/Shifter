@@ -1,29 +1,95 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, Car, MapPin, BarChart3,
-  AlertTriangle, LogOut, Menu, X, Bike, Bell, ShieldAlert, MessageSquare
+  LayoutDashboard, Users, Car, MapPin, BarChart3, AlertTriangle,
+  LogOut, Menu, X, Bike, Bell, ShieldAlert, MessageSquare,
+  HeartPulse, Shield, Lock
 } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 
-// eslint-disable-next-line no-unused-vars
-const NAV_ITEMS = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-  { to: '/drivers', icon: Bike, label: 'Chauffeurs' },
-  { to: '/users', icon: Users, label: 'Utilisateurs' },
-  { to: '/rides', icon: Car, label: 'Courses' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytiques' },
-  { to: '/sos', icon: AlertTriangle, label: 'Alertes SOS', danger: true },
-  { to: '/moderation', icon: ShieldAlert, label: 'Modération', purple: true },
-  { to: '/support', icon: MessageSquare, label: 'Support' },
-];
+const ROLE_LEVELS = { support: 1, operations: 2, finance: 3, admin: 4, superadmin: 5 };
+const ROLE_COLORS = {
+  superadmin: 'text-purple-400',
+  admin:      'text-blue-400',
+  operations: 'text-green-400',
+  finance:    'text-yellow-400',
+  support:    'text-gray-400',
+};
+const ROLE_LABELS = {
+  superadmin: 'Super Admin',
+  admin:      'Administrateur',
+  operations: 'Opérations',
+  finance:    'Finance',
+  support:    'Support',
+};
+
+function NavSection({ title, items, sidebarOpen, adminRole }) {
+  const currentLevel = ROLE_LEVELS[adminRole] || 4;
+
+  return (
+    <div>
+      {sidebarOpen && <p className="text-white/30 text-xs font-bold uppercase tracking-wider px-3 mb-1 mt-3">{title}</p>}
+      {items
+        .filter(item => !item.minRole || (ROLE_LEVELS[item.minRole] || 0) <= currentLevel)
+        .map(({ to, icon: Icon, label, exact, danger, purple }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={exact}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group mb-0.5
+              ${isActive
+                ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                : danger  ? 'text-red-400 hover:bg-red-500/10'
+                : purple  ? 'text-purple-400 hover:bg-purple-500/10'
+                : 'text-white/60 hover:bg-white/10 hover:text-white'
+              }`
+            }
+          >
+            <Icon size={18} className="flex-shrink-0" />
+            {sidebarOpen && <span className="font-medium text-sm">{label}</span>}
+          </NavLink>
+        ))
+      }
+    </div>
+  );
+}
 
 export default function Layout() {
-  const { user, logout } = useAuthStore();
+  const { user, adminRole, logout } = useAuthStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  const sections = [
+    {
+      title: 'Supervision',
+      items: [
+        { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
+        { to: '/health', icon: HeartPulse, label: 'Santé des services' },
+        { to: '/analytics', icon: BarChart3, label: 'Analytiques', minRole: 'finance' },
+      ]
+    },
+    {
+      title: 'Gestion',
+      items: [
+        { to: '/drivers', icon: Bike, label: 'Chauffeurs', minRole: 'operations' },
+        { to: '/users', icon: Users, label: 'Utilisateurs', minRole: 'support' },
+        { to: '/rides', icon: Car, label: 'Courses', minRole: 'operations' },
+        { to: '/support', icon: MessageSquare, label: 'Support', minRole: 'support' },
+      ]
+    },
+    {
+      title: 'Sécurité',
+      items: [
+        { to: '/sos', icon: AlertTriangle, label: 'Alertes SOS', danger: true, minRole: 'operations' },
+        { to: '/moderation', icon: ShieldAlert, label: 'Modération', purple: true, minRole: 'operations' },
+        { to: '/notifications', icon: Bell, label: 'Notifications', minRole: 'operations' },
+        { to: '/audit', icon: Shield, label: 'Journal d\'audit', minRole: 'admin' },
+      ]
+    },
+  ];
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
@@ -43,44 +109,30 @@ export default function Layout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(({ to, icon: Icon, label, exact, danger, purple }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={exact}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group
-                ${isActive
-                  ? 'bg-primary text-white shadow-lg shadow-primary/30'
-                  : danger
-                  ? 'text-red-400 hover:bg-red-500/10'
-                  : purple
-                  ? 'text-purple-400 hover:bg-purple-500/10'
-                  : 'text-white/60 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              <Icon size={20} className="flex-shrink-0" />
-              {sidebarOpen && <span className="font-medium text-sm">{label}</span>}
-            </NavLink>
+        <nav className="flex-1 p-3 overflow-y-auto space-y-0">
+          {sections.map(section => (
+            <NavSection
+              key={section.title}
+              title={section.title}
+              items={section.items}
+              sidebarOpen={sidebarOpen}
+              adminRole={adminRole}
+            />
           ))}
         </nav>
 
-        {/* User / Logout */}
+        {/* Rôle + Déconnexion */}
         <div className="p-3 border-t border-white/10">
           {sidebarOpen && (
             <div className="flex items-center gap-3 px-3 py-2 mb-2">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-sm font-bold">
-                  {user?.firstName?.[0] || 'A'}
-                </span>
+                <span className="text-white text-sm font-bold">{user?.firstName?.[0] || 'A'}</span>
               </div>
               <div className="min-w-0">
-                <p className="text-white text-sm font-semibold truncate">
-                  {user?.firstName || 'Admin'}
+                <p className="text-white text-sm font-semibold truncate">{user?.firstName || 'Admin'}</p>
+                <p className={`text-xs font-semibold ${ROLE_COLORS[adminRole] || 'text-white/40'}`}>
+                  {ROLE_LABELS[adminRole] || 'Administrateur'}
                 </p>
-                <p className="text-white/40 text-xs">Administrateur</p>
               </div>
             </div>
           )}
@@ -98,21 +150,23 @@ export default function Layout() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Topbar */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-          >
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors">
-              <Bell size={20} className="text-gray-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-            </button>
+            <span className="text-xs font-semibold text-gray-500">
+              {user?.firstName} {user?.lastName}
+            </span>
+            <div className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
+              adminRole === 'superadmin' ? 'border-purple-200 bg-purple-50 text-purple-700' :
+              adminRole === 'admin'      ? 'border-blue-200 bg-blue-50 text-blue-700' :
+              'border-gray-200 bg-gray-50 text-gray-600'
+            }`}>
+              {ROLE_LABELS[adminRole] || 'Admin'}
+            </div>
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>

@@ -8,7 +8,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('admin_token');
+  const token = sessionStorage.getItem('admin_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -17,7 +17,7 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('admin_token');
+      sessionStorage.removeItem('admin_token');
       window.location.href = '/login';
     }
     return Promise.reject(err);
@@ -26,28 +26,59 @@ api.interceptors.response.use(
 
 export const authAPI = {
   adminLogin: (email, password) => api.post('/auth/admin-login', { email, password }),
-  getMe: () => api.get('/auth/me'),
+  getMe:      () => api.get('/auth/me'),
 };
 
 export const adminAPI = {
-  getStats: () => api.get('/admin/stats'),
-  getDrivers: (params) => api.get('/admin/drivers', { params }),
-  approveDriver: (id) => api.put(`/admin/drivers/${id}/approve`),
-  rejectDriver: (id, reason) => api.put(`/admin/drivers/${id}/reject`, { reason }),
-  suspendDriver: (id) => api.put(`/admin/drivers/${id}/suspend`),
-  rehabilitateDriver: (id) => api.put(`/admin/drivers/${id}/rehabilitate`),
-  getUsers: (params) => api.get('/admin/users', { params }),
-  toggleUser: (id) => api.put(`/admin/users/${id}/toggle`),
-  getRides: (params) => api.get('/admin/rides', { params }),
-  getAnalytics: (days) => api.get(`/admin/analytics?days=${days}`),
-  getSosAlerts: (resolved = false) => api.get(`/admin/sos?resolved=${resolved}`),
-  resolveSos: (id) => api.put(`/admin/sos/${id}/resolve`),
-  getReports: (params) => api.get('/admin/reports', { params }),
-  updateReport: (id, data) => api.put(`/admin/reports/${id}`, data),
+  // Stats + métriques
+  getStats:   () => api.get('/admin/stats'),
+  getMetrics: () => api.get('/admin/metrics'),
+  getMe:      () => api.get('/admin/me'),
+
+  // Santé
+  getHealth:  () => api.get('/admin/health'),
+
+  // Chauffeurs
+  getDrivers:       (params) => api.get('/admin/drivers', { params }),
+  approveDriver:    (id)        => api.put(`/admin/drivers/${id}/approve`),
+  rejectDriver:     (id, reason) => api.put(`/admin/drivers/${id}/reject`, { reason }),
+  suspendDriver:    (id)        => api.put(`/admin/drivers/${id}/suspend`),
+  rehabilitateDriver: (id)      => api.put(`/admin/drivers/${id}/rehabilitate`),
+
+  // Utilisateurs
+  getUsers:   (params) => api.get('/admin/users', { params }),
   suspendUser: (id, suspend) => api.put(`/admin/users/${id}/suspend`, { suspend }),
+  setUserRole: (id, adminRole) => api.put(`/admin/users/${id}/set-role`, { adminRole }),
+
+  // Courses
+  getRides:         (params) => api.get('/admin/rides', { params }),
+  forceCancel:      (id, reason) => api.put(`/admin/rides/${id}/force-cancel`, { reason }),
+  cleanupStuck:     () => api.post('/admin/rides/cleanup-stuck'),
+
+  // Analytics
+  getAnalytics:  (days) => api.get(`/admin/analytics?days=${days}`),
+
+  // Notifications
+  getNotifications: (params) => api.get('/admin/notifications', { params }),
+  sendNotification: (data)   => api.post('/admin/notifications/send', data),
+
+  // SOS
+  getSosAlerts: (resolved = false) => api.get(`/admin/sos?resolved=${resolved}`),
+  resolveSos:   (id) => api.put(`/admin/sos/${id}/resolve`),
+
+  // Modération
+  getReports:    (params) => api.get('/admin/reports', { params }),
+  updateReport:  (id, data) => api.put(`/admin/reports/${id}`, data),
   getSuspiciousRatings: () => api.get('/admin/ratings/suspicious'),
-  getTickets: (params) => api.get('/admin/support', { params }),
+
+  // Support
+  getTickets:   (params) => api.get('/admin/support', { params }),
   updateTicket: (id, data) => api.put(`/admin/support/${id}`, data),
+
+  // Audit log
+  getAuditLog: (params) => api.get('/admin/audit-log', { params }),
+
+  // Reset (dev uniquement)
   resetTestData: () => api.post('/admin/reset-test-data'),
 };
 

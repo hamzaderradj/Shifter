@@ -1,32 +1,43 @@
 import { create } from 'zustand';
-import { authAPI } from '../services/api';
+import { authAPI, adminAPI } from '../services/api';
 
-export const useAuthStore = create((set) => ({
-  user: null,
+export const useAuthStore = create((set, get) => ({
+  user:      null,
+  adminRole: 'admin', // support | operations | finance | admin | superadmin
   isLoading: true,
   isAuthenticated: false,
 
   init: async () => {
-    const token = localStorage.getItem('admin_token');
+    const token = sessionStorage.getItem('admin_token');
     if (!token) return set({ isLoading: false });
     try {
       const { data } = await authAPI.getMe();
       if (data.user.role !== 'admin') throw new Error('Not admin');
-      set({ user: data.user, isAuthenticated: true });
+      // Récupérer le rôle admin granulaire
+      const roleRes = await adminAPI.getMe().catch(() => ({ data: { adminRole: 'admin' } }));
+      set({ user: data.user, adminRole: roleRes.data.adminRole || 'admin', isAuthenticated: true });
     } catch {
-      localStorage.removeItem('admin_token');
+      sessionStorage.removeItem('admin_token');
     } finally {
       set({ isLoading: false });
     }
   },
 
-  login: (token, user) => {
-    localStorage.setItem('admin_token', token);
-    set({ user, isAuthenticated: true });
+  login: (token, user, adminRole = 'admin') => {
+    sessionStorage.setItem('admin_token', token);
+    set({ user, adminRole, isAuthenticated: true });
   },
 
   logout: () => {
-    localStorage.removeItem('admin_token');
-    set({ user: null, isAuthenticated: false });
+    sessionStorage.removeItem('admin_token');
+    set({ user: null, adminRole: 'admin', isAuthenticated: false });
+  },
+
+  // Vérifier si l'admin a le niveau requis
+  hasRole: (minRole) => {
+    const levels = { support: 1, operations: 2, finance: 3, admin: 4, superadmin: 5 };
+    const current = levels[get().adminRole] || 4;
+    const required = levels[minRole] || 0;
+    return current >= required;
   },
 }));

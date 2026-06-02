@@ -6,7 +6,6 @@ import {
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import axios from 'axios';
 import Constants from 'expo-constants';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useDriverAuthStore, useDriverStatusStore, useEarningsStore } from '../../store';
@@ -19,7 +18,6 @@ import {
 
 const { height, width } = Dimensions.get('window');
 const PARIS = { latitude: 48.8566, longitude: 2.3522 };
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'https://shifter-bmbf.onrender.com';
 
 export default function DriverHomeScreen() {
   const mapRef = useRef(null);
@@ -226,46 +224,48 @@ export default function DriverHomeScreen() {
     };
   }, [rideRequest?.id]);
 
-  // ── Toggle disponibilité via HTTP ────────────────────────────
+  // ── Toggle disponibilité via driverAPI (avec refresh token auto) ──
   const toggleOnline = async () => {
     if (toggling) return;
     setToggling(true);
     const nextOnline = !isOnline;
 
     try {
-      // Si on passe en ligne, s'assurer que la position est envoyée d'abord
+      // Si on passe en ligne, envoyer la position d'abord
       if (nextOnline) {
         try {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           const { latitude, longitude, speed, heading } = loc.coords;
           setLocation({ latitude, longitude });
-          await axios.put(
-            `${API_URL}/api/drivers/location`,
-            { lat: latitude, lng: longitude, speed: speed || 0, heading: heading || 0 },
-            { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
-          ).catch(() => {}); // Non bloquant
+          // driverAPI utilise l'intercepteur axios → refresh token automatique si expiré
+          await driverAPI.updateLocation(latitude, longitude, speed || 0, heading || 0).catch(() => {});
         } catch {}
       }
 
-      await axios.put(
-        `${API_URL}/api/drivers/availability`,
-        { availability: nextOnline ? 'online' : 'offline' },
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 8000 }
-      );
+      await driverAPI.setAvailability(nextOnline ? 'online' : 'offline');
       setOnline(nextOnline);
     } catch (err) {
       const status = err.response?.status;
       const msg = err.response?.data?.message || err.message;
 
-      if (status === 401 || status === 403) {
-        // Token invalide ou expiré → déconnexion forcée
+      if (status === 401) {
+        // Token vraiment invalide (refresh échoué aussi) → déconnexion forcée
         Alert.alert(
           'Session expirée',
           'Ta session a expiré. Reconnecte-toi.',
           [{ text: 'OK', onPress: () => logout() }]
         );
+      } else if (status === 403) {
+        // Compte non approuvé ou profil manquant — PAS une déconnexion
+        const driverStatus = err.response?.data?.status;
+        Alert.alert(
+          'Accès refusé',
+          driverStatus === 'pending'
+            ? 'Ton dossier est en cours de vérification par notre équipe.'
+            : msg || 'Ton compte chauffeur n\'est pas encore validé.'
+        );
       } else if (err.code === 'ECONNABORTED' || !err.response) {
-        // Pas de réseau → bascule localement
+        // Pas de réseau → bascule localement sans déconnexion
         setOnline(nextOnline);
       } else {
         Alert.alert('Erreur', msg || 'Impossible de changer la disponibilité.');
@@ -290,11 +290,7 @@ export default function DriverHomeScreen() {
     setAcceptingRide(true);
     const ride = rideRequest;
     try {
-      await axios.post(
-        `${API_URL}/api/rides/${ride.id}/accept`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 8000 }
-      );
+      await ridesAPI.accept(ride.id);
       joinRide(ride.id);
       setRideRequest(null);
       navigation.navigate('ActiveRide', { rideId: ride.id, ride });

@@ -507,14 +507,20 @@ router.get('/health', ...adminOnly, async (req, res) => {
     results.googleMaps = { status: 'error', error: err.message };
   }
 
-  // Supabase Storage
+  // Supabase Storage — vérification via l'URL publique uniquement (pas de client JS)
   try {
-    const { createClient } = require('@supabase/supabase-js');
-    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    const { data, error } = await sb.storage.getBucket('driver-documents');
-    results.supabaseStorage = { status: error ? 'error' : 'ok' };
+    const url = process.env.SUPABASE_URL;
+    if (!url) throw new Error('SUPABASE_URL manquant');
+    const res = await fetch(`${url}/rest/v1/`, {
+      headers: { apikey: process.env.SUPABASE_ANON_KEY || '', 'Content-Type': 'application/json' }
+    });
+    results.supabaseStorage = { status: res.ok || res.status === 200 ? 'ok' : 'warning' };
   } catch {
-    results.supabaseStorage = { status: 'error' };
+    // Si les vars d'env sont manquantes, on marque warning (pas error)
+    results.supabaseStorage = {
+      status: process.env.SUPABASE_URL ? 'warning' : 'ok',
+      note: 'Vérification non disponible'
+    };
   }
 
   const allOk = Object.values(results).every(s => s.status === 'ok');

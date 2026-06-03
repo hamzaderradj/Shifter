@@ -6,9 +6,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
+import auth from '@react-native-firebase/auth';
 import { useDriverAuthStore } from '../../store';
 import { authAPI, driverAPI } from '../../services/api';
 import { registerPushToken } from '../../../App';
+import { getConfirmation, clearConfirmation, setConfirmation } from '../../services/firebaseConfirmation';
 import { COLORS, RADIUS } from '../../utils/theme';
 
 const CODE_LENGTH = 6;
@@ -51,31 +53,42 @@ export default function DriverOTPScreen() {
   const verify = async (fullCode) => {
     setLoading(true);
     try {
-      // 1. Vérifier le code OTP
-      const { data } = await authAPI.verifyOtp(phone, fullCode);
-      if (!data.success) throw new Error(data.message || 'Code invalide');
+      const confirmation = getConfirmation();
+      if (!confirmation) {
+        setError('Session expirée. Recommence depuis le début.');
+        navigation.goBack();
+        return;
+      }
 
-      // 2. Stocker les tokens dans SecureStore
+      // 1. Confirmer le code OTP auprès de Firebase
+      const credential = await confirmation.confirm(fullCode);
+
+      // 2. Récupérer l'ID token Firebase
+      const idToken = await credential.user.getIdToken();
+
+      // 3. Envoyer l'ID token à notre backend
+      const { data } = await authAPI.verifyFirebaseToken(idToken);
+      if (!data.success) throw new Error(data.message || 'Erreur serveur');
+
+      // 4. Stocker les tokens dans SecureStore
       await SecureStore.setItemAsync('driver_access_token', data.accessToken);
       await SecureStore.setItemAsync('driver_refresh_token', data.refreshToken);
 
-      // 3. Récupérer le profil chauffeur s'il existe
-      let driver = null;
-      try {
-        const driverRes = await driverAPI.getMe();
-        driver = driverRes.data.driver;
-      } catch {
-        // Pas encore de profil chauffeur — on ira sur Registration
-      }
+      clearConfirmation();
 
-      // 4. Mettre à jour le store (isAuthenticated → true → AppStack s'affiche)
+      const driver = data.driver || null;
       login({ user: data.user, driver, token: data.accessToken, refreshToken: data.refreshToken });
 
-      // 5. Enregistrer le push token maintenant qu'on est authentifié
       registerPushToken().catch(() => {});
 
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Code invalide. Réessaie.');
+      console.error('[DriverOTPScreen] Error:', err.code, err.message);
+      const msg =
+        err.code === 'auth/invalid-verification-code' ? 'Code incorrect. Vérifie et réessaie.' :
+        err.code === 'auth/code-expired'              ? 'Code expiré. Demande un nouveau code.' :
+        err.code === 'auth/too-many-requests'         ? 'Trop de tentatives. Réessaie plus tard.' :
+        err.response?.data?.message                  || 'Code invalide. Réessaie.';
+      setError(msg);
       setCode(['', '', '', '', '', '']);
       inputs.current[0]?.focus();
     } finally {
@@ -86,10 +99,16 @@ export default function DriverOTPScreen() {
   const resend = async () => {
     if (resendTimer > 0) return;
     try {
-      await authAPI.sendOtp(phone);
+      const confirmation = await auth().signInWithPhoneNumber(phone);
+      setConfirmation(confirmation);
       setResendTimer(30);
       setError('');
-    } catch {}
+    } catch (err) {
+      const msg = err.code === 'auth/too-many-requests'
+        ? 'Trop de tentatives. Attends quelques minutes.'
+        : 'Impossible de renvoyer le code.';
+      setError(msg);
+    }
   };
 
   const phoneDisplay = phone ? phone.replace('+33', '0') : '';
@@ -115,7 +134,6 @@ export default function DriverOTPScreen() {
             <Text style={styles.phoneNum}>{phoneDisplay}</Text>
           </Text>
 
-          {/* OTP inputs */}
           <View style={styles.codeRow}>
             {code.map((digit, i) => (
               <TextInput
@@ -151,7 +169,6 @@ export default function DriverOTPScreen() {
             </View>
           )}
 
-          {/* Resend */}
           <TouchableOpacity
             style={[styles.resendBtn, resendTimer > 0 && styles.resendBtnDisabled]}
             onPress={resend}
@@ -168,40 +185,36 @@ export default function DriverOTPScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  inner: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 12 },
-  back: {
+  container:       { flex: 1, backgroundColor: COLORS.bg },
+  inner:           { flex: 1 },
+  header:          { paddingHorizontal: 20, paddingTop: 12 },
+  back:            {
     width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
     backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  content: { flex: 1, paddingHorizontal: 24, paddingTop: 32 },
-  iconWrap: {
+  content:         { flex: 1, paddingHorizontal: 24, paddingTop: 32 },
+  iconWrap:        {
     width: 60, height: 60, borderRadius: RADIUS.lg,
     backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',
     marginBottom: 20, borderWidth: 1, borderColor: 'rgba(46,204,113,0.25)',
   },
-  title: { fontSize: 28, fontWeight: '800', color: COLORS.text, marginBottom: 10 },
-  subtitle: { fontSize: 14, color: COLORS.textSub, marginBottom: 36, lineHeight: 22 },
-  phoneNum: { color: COLORS.primary, fontWeight: '700' },
-
-  codeRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  codeInput: {
+  title:           { fontSize: 28, fontWeight: '800', color: COLORS.text, marginBottom: 10 },
+  subtitle:        { fontSize: 14, color: COLORS.textSub, marginBottom: 36, lineHeight: 22 },
+  phoneNum:        { color: COLORS.primary, fontWeight: '700' },
+  codeRow:         { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  codeInput:       {
     flex: 1, height: 58, borderRadius: RADIUS.md, textAlign: 'center',
     fontSize: 22, fontWeight: '800', color: COLORS.text,
     backgroundColor: COLORS.bgCard, borderWidth: 1.5, borderColor: COLORS.border,
   },
   codeInputFilled: { borderColor: COLORS.primary, backgroundColor: 'rgba(46,204,113,0.08)' },
-  codeInputError: { borderColor: COLORS.danger },
-
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  errorText: { fontSize: 13, color: COLORS.danger, fontWeight: '500' },
-
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  loadingText: { fontSize: 14, color: COLORS.textSub },
-
-  resendBtn: { alignItems: 'center', paddingVertical: 12 },
+  codeInputError:  { borderColor: COLORS.danger },
+  errorRow:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  errorText:       { fontSize: 13, color: COLORS.danger, fontWeight: '500' },
+  loadingRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  loadingText:     { fontSize: 14, color: COLORS.textSub },
+  resendBtn:       { alignItems: 'center', paddingVertical: 12 },
   resendBtnDisabled: {},
-  resendText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+  resendText:      { fontSize: 14, fontWeight: '700', color: COLORS.primary },
 });

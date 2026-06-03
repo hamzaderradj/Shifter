@@ -7,8 +7,7 @@
  * Stocké dans users.admin_role (colonne à ajouter via SQL)
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 const ROLE_LEVELS = {
   support:    1,
@@ -41,10 +40,32 @@ const requireAdminRole = (minRole) => async (req, res, next) => {
 
     req.adminRole = row?.admin_role || 'admin';
     next();
-  } catch {
-    // Si la colonne n'existe pas encore, laisser passer (compatibilité)
-    req.adminRole = 'admin';
-    next();
+  } catch (err) {
+    // Si la colonne n'existe pas encore (migration non appliquée), on dégrade
+    // gracieusement UNIQUEMENT pour le niveau 'admin' et en dessous.
+    // Pour 'superadmin' et 'finance' → on bloque (fail-closed).
+    const isColumnMissing =
+      err?.message?.includes('admin_role') ||
+      err?.code === '42703' ||
+      err?.message?.includes('column');
+
+    if (isColumnMissing) {
+      const fallbackLevel = ROLE_LEVELS['admin']; // 4
+      const required = ROLE_LEVELS[minRole] || 0;
+      if (fallbackLevel < required) {
+        console.warn(`[ADMIN ROLE] Colonne admin_role absente — accès refusé (requis: ${minRole})`);
+        return res.status(403).json({
+          success: false,
+          message: `Accès refusé. Rôle requis : ${minRole}`,
+        });
+      }
+      req.adminRole = 'admin';
+      return next();
+    }
+
+    // Toute autre erreur DB → fail-closed
+    console.error('[ADMIN ROLE] Erreur vérification des permissions:', err.message);
+    return res.status(500).json({ success: false, message: 'Erreur vérification des permissions' });
   }
 };
 

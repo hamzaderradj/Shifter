@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "311335075869",
+    "project_id": "shifter-dd5dc",
+    "storage_bucket": "shifter-dd5dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:311335075869:android:4a10f6dcf86a3d385506f4",
+        "android_client_info": {
+          "package_name": "com.shifter.rider"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMDEDezarR3Bv6vdu39nvsI-Hh32GAq8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:311335075869:android:6ae4a6e90204b0575506f4",
+        "android_client_info": {
+          "package_name": "com.shifter.shifter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMDEDezarR3Bv6vdu39nvsI-Hh32GAq8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

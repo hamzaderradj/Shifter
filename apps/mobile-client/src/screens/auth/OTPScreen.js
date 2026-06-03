@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, StatusBar,
   Alert, ActivityIndicator, Keyboard
@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { authAPI } from '../../services/api';
 import { useAuthStore } from '../../store';
 import { COLORS, SPACING, SIZES, RADIUS } from '../../utils/theme';
+import { getConfirmation, clearConfirmation, setConfirmation } from '../../services/firebaseConfirmation';
+import auth from '@react-native-firebase/auth';
 
 export default function OTPScreen({ navigation, route }) {
   const { phone } = route.params;
@@ -25,16 +27,40 @@ export default function OTPScreen({ navigation, route }) {
   }, []);
 
   const handleVerify = async (code) => {
-    if ((code || otp).length !== 6) return;
+    const finalCode = code || otp;
+    if (finalCode.length !== 6) return;
     Keyboard.dismiss();
     setLoading(true);
+
     try {
-      const { data } = await authAPI.verifyOtp(phone, code || otp);
+      const confirmation = getConfirmation();
+      if (!confirmation) {
+        Alert.alert('Erreur', 'Session expirée. Veuillez recommencer.');
+        navigation.goBack();
+        return;
+      }
+
+      // 1. Confirmer le code OTP auprès de Firebase
+      const credential = await confirmation.confirm(finalCode);
+
+      // 2. Récupérer l'ID token Firebase (valable 1h, signé par Google)
+      const idToken = await credential.user.getIdToken();
+
+      // 3. Envoyer l'ID token à notre backend qui le vérifie et émet nos JWT
+      const { data } = await authAPI.verifyFirebaseToken(idToken);
+
       if (data.success) {
+        clearConfirmation();
         await login(data.accessToken, data.refreshToken, data.user);
       }
     } catch (err) {
-      Alert.alert('Code incorrect', err.response?.data?.message || 'Vérifiez le code et réessayez.');
+      console.error('[OTPScreen] Error:', err.code, err.message);
+      const msg =
+        err.code === 'auth/invalid-verification-code' ? 'Code incorrect. Vérifiez et réessayez.' :
+        err.code === 'auth/code-expired'              ? 'Code expiré. Demandez un nouveau code.' :
+        err.code === 'auth/too-many-requests'         ? 'Trop de tentatives. Réessayez plus tard.' :
+        err.response?.data?.message                  || 'Une erreur est survenue.';
+      Alert.alert('Erreur', msg);
     } finally {
       setLoading(false);
     }
@@ -43,11 +69,15 @@ export default function OTPScreen({ navigation, route }) {
   const handleResend = async () => {
     setResending(true);
     try {
-      await authAPI.sendOtp(phone);
+      const confirmation = await auth().signInWithPhoneNumber(phone);
+      setConfirmation(confirmation);
       setCountdown(60);
       Alert.alert('Code renvoyé', 'Un nouveau code a été envoyé.');
-    } catch {
-      Alert.alert('Erreur', 'Impossible de renvoyer le code.');
+    } catch (err) {
+      const msg =
+        err.code === 'auth/too-many-requests' ? 'Trop de tentatives. Attendez quelques minutes.' :
+        'Impossible de renvoyer le code.';
+      Alert.alert('Erreur', msg);
     } finally {
       setResending(false);
     }
@@ -79,11 +109,11 @@ export default function OTPScreen({ navigation, route }) {
           onTextChange={setOtp}
           onFilled={handleVerify}
           theme={{
-            containerStyle: styles.otpContainer,
-            inputsContainerStyle: styles.otpInputsContainer,
-            pinCodeContainerStyle: styles.otpBox,
-            pinCodeTextStyle: styles.otpText,
-            focusStickStyle: { backgroundColor: COLORS.primary },
+            containerStyle:      styles.otpContainer,
+            inputsContainerStyle:styles.otpInputsContainer,
+            pinCodeContainerStyle:styles.otpBox,
+            pinCodeTextStyle:    styles.otpText,
+            focusStickStyle:     { backgroundColor: COLORS.primary },
           }}
         />
 
@@ -93,11 +123,10 @@ export default function OTPScreen({ navigation, route }) {
           disabled={loading || otp.length < 6}
           activeOpacity={0.85}
         >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.verifyBtnText}>Vérifier</Text>
-          )}
+          {loading
+            ? <ActivityIndicator color={COLORS.white} />
+            : <Text style={styles.verifyBtnText}>Vérifier</Text>
+          }
         </TouchableOpacity>
 
         <View style={styles.resendRow}>
@@ -119,34 +148,31 @@ export default function OTPScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  back: { padding: SPACING.md, marginTop: 40 },
-  content: { flex: 1, paddingHorizontal: SPACING.xl, paddingTop: SPACING.lg },
-  iconBox: {
+  container:    { flex: 1, backgroundColor: COLORS.white },
+  back:         { padding: SPACING.md, marginTop: 40 },
+  content:      { flex: 1, paddingHorizontal: SPACING.xl, paddingTop: SPACING.lg },
+  iconBox:      {
     width: 72, height: 72, borderRadius: 20,
     backgroundColor: 'rgba(255,107,53,0.1)',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: SPACING.lg,
   },
-  title: { fontSize: 28, fontWeight: '800', color: COLORS.secondary, marginBottom: 8 },
-  subtitle: { fontSize: SIZES.medium, color: COLORS.gray[600], lineHeight: 24, marginBottom: SPACING.xl },
-  phone: { fontWeight: '700', color: COLORS.secondary },
+  title:        { fontSize: 28, fontWeight: '800', color: COLORS.secondary, marginBottom: 8 },
+  subtitle:     { fontSize: SIZES.medium, color: COLORS.gray[600], lineHeight: 24, marginBottom: SPACING.xl },
+  phone:        { fontWeight: '700', color: COLORS.secondary },
   otpContainer: { marginBottom: SPACING.xl },
   otpInputsContainer: { gap: SPACING.sm },
-  otpBox: {
-    borderWidth: 2, borderColor: COLORS.gray[300], borderRadius: RADIUS.md,
-    width: 48, height: 56,
-  },
-  otpText: { fontSize: 24, fontWeight: '700', color: COLORS.secondary },
-  verifyBtn: {
+  otpBox:       { borderWidth: 2, borderColor: COLORS.gray[300], borderRadius: RADIUS.md, width: 48, height: 56 },
+  otpText:      { fontSize: 24, fontWeight: '700', color: COLORS.secondary },
+  verifyBtn:    {
     backgroundColor: COLORS.primary, borderRadius: RADIUS.lg,
     height: 56, alignItems: 'center', justifyContent: 'center',
     marginBottom: SPACING.lg,
   },
-  btnDisabled: { opacity: 0.5 },
-  verifyBtnText: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
-  resendRow: { alignItems: 'center' },
-  countdownText: { color: COLORS.gray[500], fontSize: SIZES.medium },
-  countdown: { fontWeight: '700', color: COLORS.secondary },
-  resendLink: { color: COLORS.primary, fontSize: SIZES.medium, fontWeight: '600' },
+  btnDisabled:  { opacity: 0.5 },
+  verifyBtnText:{ color: COLORS.white, fontSize: 18, fontWeight: '700' },
+  resendRow:    { alignItems: 'center' },
+  countdownText:{ color: COLORS.gray[500], fontSize: SIZES.medium },
+  countdown:    { fontWeight: '700', color: COLORS.secondary },
+  resendLink:   { color: COLORS.primary, fontSize: SIZES.medium, fontWeight: '600' },
 });

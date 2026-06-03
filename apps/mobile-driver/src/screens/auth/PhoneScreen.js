@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, ActivityIndicator,
+  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import auth from '@react-native-firebase/auth';
+import { setConfirmation } from '../../services/firebaseConfirmation';
 import { COLORS, RADIUS } from '../../utils/theme';
-
-const API_URL = 'https://shifter-bmbf.onrender.com';
 
 export default function DriverPhoneScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const mode = route.params?.mode || 'login'; // 'login' | 'register'
+  const mode = route.params?.mode || 'login';
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,17 +29,21 @@ export default function DriverPhoneScreen() {
     if (raw.length < 9) return;
     setLoading(true);
     try {
-      // Supprimer le 0 initial si présent (06xxx → +336xxx)
       const normalized = raw.startsWith('0') ? raw.slice(1) : raw;
       const fullPhone = '+33' + normalized;
-      await fetch(`${API_URL}/api/auth/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: fullPhone, role: 'driver' }),
-      });
+
+      // Firebase gère l'envoi du SMS directement
+      const confirmation = await auth().signInWithPhoneNumber(fullPhone);
+      setConfirmation(confirmation);
       navigation.navigate('OTP', { phone: fullPhone, mode });
-    } catch {
-      setError("Erreur réseau. Vérifie ta connexion.");
+    } catch (err) {
+      console.error('[DriverPhoneScreen] Firebase error:', err.code, err.message);
+      const msg =
+        err.code === 'auth/invalid-phone-number' ? 'Numéro de téléphone invalide.' :
+        err.code === 'auth/too-many-requests'    ? 'Trop de tentatives. Réessayez plus tard.' :
+        err.code === 'auth/quota-exceeded'       ? 'Quota SMS dépassé. Réessayez demain.' :
+        "Impossible d'envoyer le code. Vérifie ta connexion.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -87,9 +91,7 @@ export default function DriverPhoneScreen() {
             />
           </View>
 
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
             style={[styles.btn, !isValid && styles.btnDisabled]}
@@ -120,53 +122,46 @@ export default function DriverPhoneScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  inner: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 12 },
-  back: {
+  container:       { flex: 1, backgroundColor: COLORS.bg },
+  inner:           { flex: 1 },
+  header:          { paddingHorizontal: 20, paddingTop: 12 },
+  back:            {
     width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
     backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  content: { flex: 1, paddingHorizontal: 24, paddingTop: 32 },
-  iconWrap: {
+  content:         { flex: 1, paddingHorizontal: 24, paddingTop: 32 },
+  iconWrap:        {
     width: 60, height: 60, borderRadius: RADIUS.lg,
     backgroundColor: 'rgba(46,204,113,0.12)', alignItems: 'center', justifyContent: 'center',
     marginBottom: 20, borderWidth: 1, borderColor: 'rgba(46,204,113,0.25)',
   },
-  title: { fontSize: 30, fontWeight: '800', color: COLORS.text, lineHeight: 38, marginBottom: 10 },
-  subtitle: { fontSize: 14, color: COLORS.textSub, marginBottom: 32, lineHeight: 20 },
-
-  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  countryBox: {
+  title:           { fontSize: 30, fontWeight: '800', color: COLORS.text, lineHeight: 38, marginBottom: 10 },
+  subtitle:        { fontSize: 14, color: COLORS.textSub, marginBottom: 32, lineHeight: 20 },
+  inputRow:        { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  countryBox:      {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
     paddingHorizontal: 14, paddingVertical: 15,
     borderWidth: 1.5, borderColor: COLORS.border,
   },
-  flag: { fontSize: 18 },
-  code: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  phoneInput: {
+  flag:            { fontSize: 18 },
+  code:            { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  phoneInput:      {
     flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md,
     paddingHorizontal: 16, paddingVertical: 15, fontSize: 16, color: COLORS.text,
     borderWidth: 1.5, borderColor: COLORS.border,
   },
   phoneInputError: { borderColor: COLORS.danger },
-  errorText: { fontSize: 13, color: COLORS.danger, marginBottom: 12 },
-
-  btn: {
+  errorText:       { fontSize: 13, color: COLORS.danger, marginBottom: 12 },
+  btn:             {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, paddingVertical: 17,
-    marginTop: 16,
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, paddingVertical: 17, marginTop: 16,
     shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4, shadowRadius: 16, elevation: 10,
   },
-  btnDisabled: { backgroundColor: 'rgba(46,204,113,0.3)', shadowOpacity: 0 },
-  btnText: { color: COLORS.bg, fontSize: 16, fontWeight: '800' },
-
-  terms: {
-    textAlign: 'center', fontSize: 11, color: COLORS.textMuted,
-    marginTop: 20, lineHeight: 17,
-  },
-  link: { color: COLORS.textSub, fontWeight: '600' },
+  btnDisabled:     { backgroundColor: 'rgba(46,204,113,0.3)', shadowOpacity: 0 },
+  btnText:         { color: COLORS.bg, fontSize: 16, fontWeight: '800' },
+  terms:           { textAlign: 'center', fontSize: 11, color: COLORS.textMuted, marginTop: 20, lineHeight: 17 },
+  link:            { color: COLORS.textSub, fontWeight: '600' },
 });

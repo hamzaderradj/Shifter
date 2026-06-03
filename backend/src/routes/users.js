@@ -1,9 +1,7 @@
 const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { authenticate } = require('../middleware/auth');
-
-const prisma = new PrismaClient();
 
 // ── GET /users/favorites ──────────────────────────────────────
 router.get('/favorites', authenticate, async (req, res) => {

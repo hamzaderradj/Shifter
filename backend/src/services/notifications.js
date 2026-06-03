@@ -1,7 +1,6 @@
 const { Expo } = require('expo-server-sdk');
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
+const { withExpoPush } = require('../middleware/terminator/circuitBreaker');
 const expo = new Expo({
   accessToken: process.env.EXPO_ACCESS_TOKEN, // optionnel mais recommandé en prod
   useFcmV1: true, // FCM v1 (HTTP v1 API, obligatoire après juin 2024)
@@ -47,7 +46,8 @@ const sendPushNotification = async (userId, { type, title, body, data = {} }) =>
 
     const chunks = expo.chunkPushNotifications([message]);
     for (const chunk of chunks) {
-      const tickets = await expo.sendPushNotificationsAsync(chunk);
+      const tickets = await withExpoPush(() => expo.sendPushNotificationsAsync(chunk));
+      if (!tickets) continue;
 
       // Vérifier les tickets pour détecter les erreurs
       for (const ticket of tickets) {

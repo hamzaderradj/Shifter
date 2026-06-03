@@ -1,11 +1,14 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { requireAdminRole, auditLog } = require('../middleware/adminRole');
+const { clampInt, validateUUID } = require('../middleware/security');
 const { notifyAccountApproved, notifyAccountRejected, sendPushNotification } = require('../services/notifications');
+const terminator = require('../middleware/terminator');
 
-const prisma = new PrismaClient();
 const adminOnly = [authenticate, requireRole('admin')];
+// Shortcut: adminOnly + UUID validation sur le param :id
+const adminId = [...adminOnly, ...validateUUID('id')];
 
 // ── GET /admin/stats ─────────────────────────────────────────
 router.get('/stats', ...adminOnly, async (req, res) => {
@@ -80,7 +83,7 @@ router.get('/drivers', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/drivers/:id/approve ──────────────────────────
-router.put('/drivers/:id/approve', ...adminOnly, async (req, res) => {
+router.put('/drivers/:id/approve', ...adminId, requireAdminRole('operations'), auditLog('approve_driver'), async (req, res) => {
   try {
     const driver = await prisma.driver.update({
       where: { id: req.params.id },
@@ -95,7 +98,7 @@ router.put('/drivers/:id/approve', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/drivers/:id/reject ────────────────────────────
-router.put('/drivers/:id/reject', ...adminOnly, async (req, res) => {
+router.put('/drivers/:id/reject', ...adminId, requireAdminRole('operations'), auditLog('reject_driver'), async (req, res) => {
   try {
     const { reason } = req.body;
     const driver = await prisma.driver.update({
@@ -110,12 +113,15 @@ router.put('/drivers/:id/reject', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/drivers/:id/suspend ──────────────────────────
-router.put('/drivers/:id/suspend', ...adminOnly, async (req, res) => {
+router.put('/drivers/:id/suspend', ...adminId, requireAdminRole('operations'), auditLog('suspend_driver'), async (req, res) => {
   try {
     const driver = await prisma.driver.update({
       where: { id: req.params.id },
       data: { status: 'suspended', availability: 'offline' }
     });
+    // Déconnecter le chauffeur via socket si connecté
+    const io = req.app.get('io');
+    if (io) io.to(`driver_${req.params.id}`).emit('account_suspended', { message: 'Votre compte a été suspendu.' });
     res.json({ success: true, driver });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });
@@ -123,7 +129,7 @@ router.put('/drivers/:id/suspend', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/drivers/:id/rehabilitate ──────────────────────
-router.put('/drivers/:id/rehabilitate', ...adminOnly, async (req, res) => {
+router.put('/drivers/:id/rehabilitate', ...adminId, requireAdminRole('operations'), auditLog('rehabilitate_driver'), async (req, res) => {
   try {
     const driver = await prisma.driver.update({
       where: { id: req.params.id },
@@ -173,7 +179,7 @@ router.get('/users', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/users/:id/toggle ──────────────────────────────
-router.put('/users/:id/toggle', ...adminOnly, async (req, res) => {
+router.put('/users/:id/toggle', ...adminId, requireAdminRole('operations'), auditLog('toggle_user'), async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
@@ -218,9 +224,9 @@ router.get('/rides', ...adminOnly, async (req, res) => {
 // ── GET /admin/analytics ─────────────────────────────────────
 router.get('/analytics', ...adminOnly, async (req, res) => {
   try {
-    const { days = 30 } = req.query;
+    const days = clampInt(req.query.days, 1, 365, 30); // max 1 an
     const dateFrom = new Date();
-    dateFrom.setDate(dateFrom.getDate() - parseInt(days));
+    dateFrom.setDate(dateFrom.getDate() - days);
 
     const dailyStats = await prisma.$queryRaw`
       SELECT
@@ -293,7 +299,7 @@ router.get('/reports', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/reports/:id ────────────────────────────────────
-router.put('/reports/:id', ...adminOnly, async (req, res) => {
+router.put('/reports/:id', ...adminId, requireAdminRole('operations'), auditLog('update_report'), async (req, res) => {
   try {
     const { status, adminNote } = req.body;
     const report = await prisma.report.update({
@@ -307,7 +313,7 @@ router.put('/reports/:id', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/users/:id/suspend ──────────────────────────────
-router.put('/users/:id/suspend', ...adminOnly, async (req, res) => {
+router.put('/users/:id/suspend', ...adminId, requireAdminRole('operations'), auditLog('suspend_user'), async (req, res) => {
   try {
     const { suspend = true } = req.body;
     const user = await prisma.user.update({
@@ -380,7 +386,7 @@ router.get('/support', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/support/:id ────────────────────────────────────
-router.put('/support/:id', ...adminOnly, async (req, res) => {
+router.put('/support/:id', ...adminId, requireAdminRole('support'), auditLog('update_ticket'), async (req, res) => {
   try {
     const { status, adminReply } = req.body;
     const data = { status };
@@ -399,15 +405,19 @@ router.put('/support/:id', ...adminOnly, async (req, res) => {
 });
 
 // ── POST /admin/reset-test-data ───────────────────────────────
-// Supprime toutes les courses et remet les compteurs à zéro
-// À n'utiliser qu'en phase de développement
-router.post('/reset-test-data', ...adminOnly, async (req, res) => {
+// DANGER — désactivé en PRODUCTION, superadmin uniquement, tracé dans l'audit log
+router.post('/reset-test-data', ...adminOnly, requireAdminRole('superadmin'), auditLog('reset_test_data'), async (req, res) => {
+  // Protection absolue : cette route ne fonctionne JAMAIS en production
+  if (process.env.NODE_ENV === 'production') {
+    console.error(`[SECURITY] Tentative d'accès à reset-test-data en production par userId=${req.user.id} depuis ${req.ip}`);
+    return res.status(403).json({
+      success: false,
+      message: 'Route désactivée en production'
+    });
+  }
   try {
-    // Supprimer les notes (FK sur rides)
     await prisma.rating.deleteMany({});
-    // Supprimer les courses
     const ridesDeleted = await prisma.ride.deleteMany({});
-    // Remettre compteurs chauffeurs à zéro
     const driversReset = await prisma.driver.updateMany({
       data: { totalEarnings: 0, totalRides: 0, availability: 'offline' }
     });
@@ -442,7 +452,7 @@ router.get('/sos', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/sos/:id/resolve ────────────────────────────────
-router.put('/sos/:id/resolve', ...adminOnly, async (req, res) => {
+router.put('/sos/:id/resolve', ...adminId, requireAdminRole('operations'), auditLog('resolve_sos'), async (req, res) => {
   try {
     const alert = await prisma.sosAlert.update({
       where: { id: req.params.id },
@@ -650,7 +660,7 @@ router.get('/metrics', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/rides/:id/force-cancel — forcer l'annulation ──────────
-router.put('/rides/:id/force-cancel', ...adminOnly, requireAdminRole('operations'), auditLog('force_cancel_ride'), async (req, res) => {
+router.put('/rides/:id/force-cancel', ...adminId, requireAdminRole('operations'), auditLog('force_cancel_ride'), async (req, res) => {
   try {
     const { reason = 'Annulée par l\'administration' } = req.body;
     const ride = await prisma.ride.findUnique({
@@ -738,7 +748,7 @@ router.get('/me', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/users/:id/set-role — changer le rôle admin ────────────
-router.put('/users/:id/set-role', ...adminOnly, requireAdminRole('superadmin'), auditLog('set_admin_role'), async (req, res) => {
+router.put('/users/:id/set-role', ...adminId, requireAdminRole('superadmin'), auditLog('set_admin_role'), async (req, res) => {
   try {
     const { adminRole } = req.body;
     const validRoles = ['support', 'operations', 'finance', 'admin', 'superadmin'];
@@ -753,7 +763,8 @@ router.put('/users/:id/set-role', ...adminOnly, requireAdminRole('superadmin'), 
 });
 
 // ── POST /admin/fix-phones — normalise les numéros +330xxx → +33xxx ──
-router.post('/fix-phones', ...adminOnly, async (req, res) => {
+// Superadmin uniquement — modifie les numéros de tous les utilisateurs
+router.post('/fix-phones', ...adminOnly, requireAdminRole('superadmin'), auditLog('fix_phones'), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       where: { phone: { startsWith: '+330' } }
@@ -775,5 +786,40 @@ router.post('/fix-phones', ...adminOnly, async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// TERMINATOR — Endpoints de supervision de la sécurité
+// ══════════════════════════════════════════════════════════════
+
+// ── GET /admin/terminator/status — statut complet du système ──
+router.get('/terminator/status', ...adminOnly, requireAdminRole('admin'), async (req, res) => {
+  res.json({ success: true, terminator: terminator.getFullStatus() });
+});
+
+// ── GET /admin/terminator/banned-ips — IPs bannies ────────────
+router.get('/terminator/banned-ips', ...adminOnly, requireAdminRole('admin'), (req, res) => {
+  res.json({ success: true, bannedIps: terminator.listBannedIps() });
+});
+
+// ── DELETE /admin/terminator/ban/:ip — débloquer une IP ───────
+router.delete('/terminator/ban/:ip', ...adminOnly, requireAdminRole('superadmin'),
+  auditLog('unban_ip'),
+  (req, res) => {
+    terminator.unbanIp(req.params.ip);
+    res.json({ success: true, message: `IP ${req.params.ip} débloquée` });
+  }
+);
+
+// ── POST /admin/terminator/ban — bannir manuellement une IP ───
+router.post('/terminator/ban', ...adminOnly, requireAdminRole('superadmin'),
+  auditLog('manual_ban_ip'),
+  (req, res) => {
+    const { ip, reason = 'manual_ban' } = req.body;
+    if (!ip) return res.status(400).json({ success: false, message: 'IP requise' });
+    // Forcer le ban en enregistrant assez d'incidents
+    for (let i = 0; i < 25; i++) terminator.recordIncident(ip, reason);
+    res.json({ success: true, message: `IP ${ip} bannie` });
+  }
+);
 
 module.exports = router;

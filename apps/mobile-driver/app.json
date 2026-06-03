@@ -16,7 +16,8 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.taxamoto.driver",
+      "bundleIdentifier": "com.shifter.rider",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleMapsApiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
       },
@@ -30,7 +31,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F0F1A"
       },
-      "package": "com.taxamoto.driver",
+      "googleServicesFile": "./google-services.json",
+      "package": "com.shifter.rider",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
@@ -55,6 +57,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
       [
         "expo-notifications",
         {

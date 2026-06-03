@@ -46,6 +46,7 @@ api.interceptors.response.use(
 export const authAPI = {
   sendOtp: (phone) => api.post('/auth/send-otp', { phone }),
   verifyOtp: (phone, code) => api.post('/auth/verify-otp', { phone, code }),
+  verifyFirebaseToken: (idToken) => api.post('/auth/verify-firebase-token', { idToken }),
   logout: (refreshToken) => api.post('/auth/logout', { refreshToken }),
   getMe: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),

@@ -1,4 +1,5 @@
 const config = require('../config');
+const { withGoogleMaps } = require('../middleware/terminator/circuitBreaker');
 
 /**
  * Haversine — distance à vol d'oiseau (fallback si Routes API indisponible)
@@ -22,7 +23,7 @@ const getRouteFromGoogle = async (originLat, originLng, destLat, destLng) => {
   const key = process.env.GOOGLE_MAPS_KEY;
   if (!key) return null;
 
-  try {
+  return withGoogleMaps(async () => {
     const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
       method: 'POST',
       headers: {
@@ -48,10 +49,7 @@ const getRouteFromGoogle = async (originLat, originLng, destLat, destLng) => {
     const durationMinutes = Math.ceil(durationSeconds / 60);
 
     return { distanceKm, durationMinutes };
-  } catch (err) {
-    console.warn('[Routes API] erreur:', err.message);
-    return null;
-  }
+  }, null); // fallback circuit ouvert → null → estimateRide utilise Haversine
 };
 
 /**

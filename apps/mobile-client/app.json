@@ -7,9 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-    "image": "./assets/logo.png",
-    "resizeMode": "contain",
-    "backgroundColor": "#ffffff",
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F1729"
@@ -19,13 +16,15 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.taxamoto.client",
+      "bundleIdentifier": "com.shifter.shifter",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleMapsApiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous.",
-        "NSLocationAlwaysUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous."
+        "NSLocationAlwaysUsageDescription": "TaxaMoto utilise votre localisation pour vous trouver les meilleurs moto-taxis près de vous.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -33,21 +32,14 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F1729"
       },
-      "package": "com.taxamoto.client",
+      "googleServicesFile": "./google-services.json",
+      "package": "com.shifter.shifter",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAXj75av_ObpiHWHx1egV9UkgioVVxC0eU"
         }
       },
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE",
-        "RECEIVE_SMS",
-        "READ_SMS",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
@@ -62,6 +54,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
       [
         "expo-notifications",
         {

@@ -7,7 +7,7 @@ module.exports = {
 
   jwt: {
     secret: process.env.JWT_SECRET || 'dev-secret-change-in-prod',
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: process.env.JWT_EXPIRES_IN || '2h',   // TERMINATOR: réduit de 7j à 2h
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   },

@@ -1,12 +1,11 @@
 const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 const config = require('../config');
 const { authenticate, requireRole, requireDriver } = require('../middleware/auth');
-
-const prisma = new PrismaClient();
+const { withSupabase } = require('../middleware/terminator/circuitBreaker');
 
 // Supabase Storage client (service role pour bypass RLS)
 // Node 20 n'a pas WebSocket natif — on désactive le realtime (pas besoin pour Storage)
@@ -25,14 +24,28 @@ const upload = multer({
   }
 });
 
-// Helper : upload buffer → Supabase Storage → URL publique
+// Helper : upload buffer → Supabase Storage → chemin stocké en DB
+// Protégé par circuit breaker TERMINATOR T3 (withSupabase)
 async function uploadToSupabase(buffer, mimetype, filename) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .upload(filename, buffer, { contentType: mimetype, upsert: true });
-  if (error) throw new Error(`Supabase upload failed: ${error.message}`);
-  const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(filename);
-  return publicUrl;
+  return withSupabase(async () => {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .upload(filename, buffer, { contentType: mimetype, upsert: true });
+    if (error) throw new Error(`Supabase upload failed: ${error.message}`);
+    return filename;
+  }); // fallback null → erreur capturée dans la route
+}
+
+// Helper : générer une signed URL temporaire (valide 15min)
+// Protégé par circuit breaker TERMINATOR T3 (withSupabase)
+async function getSignedUrl(storagePath, expiresInSeconds = 900) {
+  return withSupabase(async () => {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, expiresInSeconds);
+    if (error) throw new Error(`Signed URL error: ${error.message}`);
+    return data.signedUrl;
+  }); // fallback null
 }
 
 // ── POST /drivers/register ────────────────────────────────────
@@ -94,15 +107,16 @@ router.post('/documents',
       const driver = await prisma.driver.findUnique({ where: { userId: req.user.id } });
       if (!driver) return res.status(404).json({ success: false, message: 'Profil chauffeur introuvable' });
 
-      // Upload vers Supabase Storage (persistant)
+      // Upload vers Supabase Storage (bucket privé)
+      // On stocke le chemin relatif en DB, pas l'URL publique
       const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
       const filename = `${driver.id}/${req.body.type}_${Date.now()}${ext}`;
-      const fileUrl = await uploadToSupabase(req.file.buffer, req.file.mimetype, filename);
+      const storagePath = await uploadToSupabase(req.file.buffer, req.file.mimetype, filename);
 
       const doc = await prisma.driverDocument.upsert({
         where: { driverId_type: { driverId: driver.id, type: req.body.type } },
-        update: { fileUrl, status: 'pending', notes: null },
-        create: { driverId: driver.id, type: req.body.type, fileUrl }
+        update: { fileUrl: storagePath, status: 'pending', notes: null },
+        create: { driverId: driver.id, type: req.body.type, fileUrl: storagePath }
       });
 
       res.json({ success: true, document: doc });
@@ -299,6 +313,37 @@ router.get('/earnings', authenticate, requireDriver, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// ── GET /drivers/documents/:docId/url — signed URL temporaire ─
+// Admin ou le chauffeur propriétaire uniquement
+router.get('/documents/:docId/url', authenticate, async (req, res) => {
+  try {
+    const { docId } = req.params;
+
+    const doc = await prisma.driverDocument.findUnique({
+      where: { id: docId },
+      include: { driver: { select: { userId: true } } }
+    });
+
+    if (!doc) return res.status(404).json({ success: false, message: 'Document introuvable' });
+
+    // Accès : admin OU le chauffeur propriétaire
+    const isOwner = doc.driver.userId === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Accès refusé' });
+    }
+
+    // URL signée valide 15 minutes
+    const signedUrl = await getSignedUrl(doc.fileUrl, 900);
+
+    res.json({ success: true, url: signedUrl, expiresIn: 900 });
+  } catch (err) {
+    console.error('[SIGNED URL]', err.message);
+    res.status(500).json({ success: false, message: 'Erreur génération URL' });
   }
 });
 

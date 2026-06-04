@@ -20,7 +20,9 @@ const driversRoutes = require('./routes/drivers');
 const usersRoutes   = require('./routes/users');
 const adminRoutes   = require('./routes/admin');
 
-const initSocket = require('./socket');
+const initSocket      = require('./socket');
+const rideSyncService = require('./services/rideSyncService');
+const { reconcile }   = require('./services/reconciliation');
 
 const app = express();
 const server = http.createServer(app);
@@ -70,6 +72,9 @@ const io = new Server(server, {
 
 initSocket(io);
 app.set('io', io);
+
+// ── Initialiser le service de synchronisation ─────────────────
+rideSyncService.init(io);
 
 // ── Middlewares ───────────────────────────────────────────────
 app.use(helmet({
@@ -313,20 +318,71 @@ app.use((err, req, res, next) => {
 });
 
 // ── Démarrage ─────────────────────────────────────────────────
-server.listen(config.port, () => {
+server.listen(config.port, async () => {
   logger.info(`Shifter API démarré`, {
     port: config.port,
     env:  config.env,
   });
+
+  // Réconciliation au démarrage : réparer les états incohérents
+  // laissés par un redémarrage / crash pendant une course
+  setTimeout(() => reconcile(io).catch((e) => logger.error('[RECON] Erreur:', e.message)), 3000);
 });
 
-// ── Graceful shutdown ─────────────────────────────────────────
+// ── Graceful shutdown (P1.3) ──────────────────────────────────
+// CORRECTION P1.3 : avant, SIGTERM tuait le processus avant que les setTimeout(30s)
+// du disconnect handler ne s'exécutent → drivers restaient 'busy', clients non notifiés.
+// Maintenant :
+//   1. On prévient tous les clients connectés AVANT de fermer
+//   2. On laisse Socket.io 5s pour propager les événements
+//   3. On réconcilie les drivers 'busy' dont les timers n'auront pas eu le temps de tourner
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} reçu — arrêt en cours...`);
+
+  // 1. Prévenir tous les clients/drivers connectés
+  if (io) {
+    io.emit('backend_restarting', {
+      message:   'Le serveur redémarre. Reconnexion automatique dans quelques secondes.',
+      timestamp: Date.now(),
+    });
+    logger.info('[SHUTDOWN] backend_restarting émis à tous les sockets');
+  }
+
+  // 2. Libérer immédiatement en DB tous les drivers 'busy' dont la course est in_progress
+  // Ils seront correctement restaurés par la réconciliation au prochain démarrage.
+  // Ne pas toucher aux drivers avec courses accepted/en_route/arrived (réconciliation gère).
+  try {
+    const result = await prisma.driver.updateMany({
+      where: {
+        availability: 'busy',
+        rides: {
+          none: {
+            status: { in: ['accepted', 'driver_en_route', 'arrived', 'in_progress'] },
+          },
+        },
+      },
+      data: { availability: 'online' },
+    });
+    if (result.count > 0) {
+      logger.info(`[SHUTDOWN] ${result.count} driver(s) busy sans ride libéré(s)`);
+    }
+  } catch (e) {
+    logger.error('[SHUTDOWN] Erreur libération drivers', { error: e.message });
+  }
+
+  // 3. Attendre 5s pour que les événements socket se propagent avant de couper
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);
   });
+
+  // Forcer la sortie après 15s au cas où server.close() se bloque
+  setTimeout(() => {
+    logger.warn('[SHUTDOWN] Forçage sortie après 15s');
+    process.exit(0);
+  }, 15_000);
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

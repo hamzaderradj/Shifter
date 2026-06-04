@@ -5,6 +5,8 @@ const { requireAdminRole, auditLog } = require('../middleware/adminRole');
 const { clampInt, validateUUID } = require('../middleware/security');
 const { notifyAccountApproved, notifyAccountRejected, sendPushNotification } = require('../services/notifications');
 const terminator = require('../middleware/terminator');
+const { cancelRide, offerRideToNextDriver, triggerOfferIfIdle } = require('../services/rideManager');
+const { reconcile } = require('../services/reconciliation');
 
 const adminOnly = [authenticate, requireRole('admin')];
 // Shortcut: adminOnly + UUID validation sur le param :id
@@ -660,12 +662,15 @@ router.get('/metrics', ...adminOnly, async (req, res) => {
 });
 
 // ── PUT /admin/rides/:id/force-cancel — forcer l'annulation ──────────
+// CORRECTION P0 : utilise cancelRide() qui passe par rideSyncService
+// → push client + driver, socket ride room + admin_room, libère le chauffeur
 router.put('/rides/:id/force-cancel', ...adminId, requireAdminRole('operations'), auditLog('force_cancel_ride'), async (req, res) => {
   try {
-    const { reason = 'Annulée par l\'administration' } = req.body;
+    const { reason = "Annulée par l'administration" } = req.body;
+
     const ride = await prisma.ride.findUnique({
       where: { id: req.params.id },
-      include: { driver: true }
+      select: { id: true, status: true },
     });
 
     if (!ride) return res.status(404).json({ success: false, message: 'Course introuvable' });
@@ -673,36 +678,38 @@ router.put('/rides/:id/force-cancel', ...adminId, requireAdminRole('operations')
       return res.status(409).json({ success: false, message: 'Course déjà terminée ou annulée' });
     }
 
-    const updated = await prisma.ride.update({
-      where: { id: req.params.id },
-      data: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: req.user.id, cancelReason: reason }
-    });
-
-    if (ride.driver) {
-      await prisma.driver.update({
-        where: { id: ride.driver.id },
-        data: { availability: 'online' }
-      });
-    }
-
     const io = req.app.get('io');
-    if (io) io.to(`ride_${req.params.id}`).emit('ride_status_changed', { rideId: req.params.id, status: 'cancelled' });
+    // cancelRide gère : ride update, driver libéré, socket (ride_room + admin_room), push (client + driver)
+    await cancelRide(req.params.id, reason, req.user.id, io);
 
-    res.json({ success: true, ride: updated });
+    res.json({ success: true, message: 'Course annulée', rideId: req.params.id });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 });
 
 // ── POST /admin/rides/cleanup-stuck — nettoyer les courses bloquées ───
+// CORRECTION P1 : notifie socket + push pour chaque course annulée (n'était pas fait avant)
 router.post('/rides/cleanup-stuck', ...adminOnly, requireAdminRole('operations'), auditLog('cleanup_stuck_rides'), async (req, res) => {
   try {
     const stuckAt = new Date(Date.now() - 15 * 60 * 1000);
-    const result = await prisma.ride.updateMany({
+
+    const stuckRides = await prisma.ride.findMany({
       where: { status: 'searching', requestedAt: { lt: stuckAt } },
-      data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: 'Timeout automatique — aucun chauffeur disponible' }
+      select: { id: true, clientId: true },
     });
-    res.json({ success: true, cancelled: result.count, message: `${result.count} course(s) bloquée(s) annulée(s)` });
+
+    if (stuckRides.length === 0) {
+      return res.json({ success: true, cancelled: 0, message: 'Aucune course bloquée' });
+    }
+
+    const io = req.app.get('io');
+    // Annuler via cancelRide pour avoir socket + push sur chaque course
+    for (const ride of stuckRides) {
+      await cancelRide(ride.id, 'Timeout — aucun chauffeur disponible', req.user.id, io).catch(() => {});
+    }
+
+    res.json({ success: true, cancelled: stuckRides.length, message: `${stuckRides.length} course(s) annulée(s) avec notifications` });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
@@ -816,10 +823,156 @@ router.post('/terminator/ban', ...adminOnly, requireAdminRole('superadmin'),
   (req, res) => {
     const { ip, reason = 'manual_ban' } = req.body;
     if (!ip) return res.status(400).json({ success: false, message: 'IP requise' });
-    // Forcer le ban en enregistrant assez d'incidents
     for (let i = 0; i < 25; i++) terminator.recordIncident(ip, reason);
     res.json({ success: true, message: `IP ${ip} bannie` });
   }
 );
+
+// ══════════════════════════════════════════════════════════════
+// OPS — Endpoints d'exploitation opérationnelle (P3)
+// Permettent à un opérateur de réparer la plateforme sans accès DB
+// ══════════════════════════════════════════════════════════════
+
+// ── POST /admin/ops/reconcile — réconciliation manuelle complète ──────────────
+router.post('/ops/reconcile', ...adminOnly, requireAdminRole('operations'), auditLog('manual_reconcile'), async (req, res) => {
+  try {
+    const io = req.app.get('io');
+    // Réconciliation complète : bloqués searching, active, in_progress, drivers busy
+    await reconcile(io);
+    res.json({ success: true, message: 'Réconciliation terminée. Vérifiez les logs pour le détail.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── POST /admin/ops/restart-offer/:rideId — relancer l'offer loop d'une ride ──
+router.post('/ops/restart-offer/:rideId', ...adminOnly, requireAdminRole('operations'), auditLog('restart_offer'), async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      select: { id: true, status: true },
+    });
+    if (!ride) return res.status(404).json({ success: false, message: 'Course introuvable' });
+    if (ride.status !== 'searching') {
+      return res.status(409).json({ success: false, message: `Course en statut '${ride.status}' — offer loop inutile` });
+    }
+    const io = req.app.get('io');
+    await offerRideToNextDriver(rideId, io);
+    res.json({ success: true, message: `Offer loop relancée pour ride ${rideId}` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /admin/ops/incoherent-rides — courses dans un état incohérent ─────────
+router.get('/ops/incoherent-rides', ...adminOnly, async (req, res) => {
+  try {
+    const now = new Date();
+    const [
+      stuckSearching,
+      stuckActive,
+      stuckInProgress,
+    ] = await Promise.all([
+      // Searching > 10 min
+      prisma.ride.findMany({
+        where: { status: 'searching', requestedAt: { lt: new Date(now - 10 * 60 * 1000) } },
+        select: { id: true, status: true, requestedAt: true, updatedAt: true,
+          client: { select: { firstName: true, phone: true } } },
+      }),
+      // accepted/en_route/arrived > 2h sans mise à jour
+      prisma.ride.findMany({
+        where: {
+          status: { in: ['accepted', 'driver_en_route', 'arrived'] },
+          updatedAt: { lt: new Date(now - 2 * 60 * 60 * 1000) },
+        },
+        select: { id: true, status: true, updatedAt: true,
+          client: { select: { firstName: true, phone: true } },
+          driver: { include: { user: { select: { firstName: true, phone: true } } } } },
+      }),
+      // in_progress > 4h
+      prisma.ride.findMany({
+        where: { status: 'in_progress', pickedUpAt: { lt: new Date(now - 4 * 60 * 60 * 1000) } },
+        select: { id: true, status: true, pickedUpAt: true,
+          client: { select: { firstName: true, phone: true } },
+          driver: { include: { user: { select: { firstName: true, phone: true } } } } },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      incoherent: {
+        stuckSearching:  { count: stuckSearching.length,  rides: stuckSearching  },
+        stuckActive:     { count: stuckActive.length,     rides: stuckActive     },
+        stuckInProgress: { count: stuckInProgress.length, rides: stuckInProgress },
+        total: stuckSearching.length + stuckActive.length + stuckInProgress.length,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /admin/ops/incoherent-drivers — chauffeurs dans un état incohérent ────
+router.get('/ops/incoherent-drivers', ...adminOnly, async (req, res) => {
+  try {
+    // Drivers busy sans course active
+    const busyNoRide = await prisma.$queryRaw`
+      SELECT d.id, d.availability, u.first_name, u.last_name, u.phone
+      FROM drivers d
+      JOIN users u ON u.id = d.user_id
+      WHERE d.availability = 'busy'
+        AND NOT EXISTS (
+          SELECT 1 FROM rides r
+          WHERE r.driver_id = d.id
+            AND r.status IN ('accepted','driver_en_route','arrived','in_progress')
+        )
+    `;
+
+    // Drivers online depuis > 8h (potentiellement oublié de se déconnecter)
+    const longOnline = await prisma.$queryRaw`
+      SELECT d.id, d.availability, d.location_updated_at, u.first_name, u.phone
+      FROM drivers d
+      JOIN users u ON u.id = d.user_id
+      WHERE d.availability = 'online'
+        AND d.location_updated_at < NOW() - INTERVAL '8 hours'
+    `;
+
+    // Drivers offline avec cours in_progress (normalement impossible)
+    const offlineWithRide = await prisma.$queryRaw`
+      SELECT d.id, d.availability, u.first_name, u.phone, r.id as ride_id, r.status as ride_status
+      FROM drivers d
+      JOIN users u ON u.id = d.user_id
+      JOIN rides r ON r.driver_id = d.id
+      WHERE d.availability = 'offline'
+        AND r.status IN ('accepted','driver_en_route','arrived','in_progress')
+    `;
+
+    res.json({
+      success: true,
+      incoherent: {
+        busyNoRide:      { count: busyNoRide.length,      drivers: busyNoRide      },
+        longOnline:      { count: longOnline.length,      drivers: longOnline      },
+        offlineWithRide: { count: offlineWithRide.length, drivers: offlineWithRide },
+        total: busyNoRide.length + offlineWithRide.length,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── POST /admin/ops/fix-driver/:driverId — forcer la libération d'un driver ──
+router.post('/ops/fix-driver/:driverId', ...adminOnly, requireAdminRole('operations'), auditLog('fix_driver_state'), async (req, res) => {
+  try {
+    const driver = await prisma.driver.update({
+      where: { id: req.params.driverId },
+      data:  { availability: 'online' },
+    });
+    res.json({ success: true, message: `Driver ${req.params.driverId} remis en ligne`, driver });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

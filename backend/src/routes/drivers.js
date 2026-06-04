@@ -6,6 +6,8 @@ const { createClient } = require('@supabase/supabase-js');
 const config = require('../config');
 const { authenticate, requireRole, requireDriver } = require('../middleware/auth');
 const { withSupabase } = require('../middleware/terminator/circuitBreaker');
+const logger = require('../services/logger');
+const { triggerOfferIfIdle } = require('../services/rideManager');
 
 // Supabase Storage client (service role pour bypass RLS)
 // Node 20 n'a pas WebSocket natif — on désactive le realtime (pas besoin pour Storage)
@@ -107,22 +109,46 @@ router.post('/documents',
       const driver = await prisma.driver.findUnique({ where: { userId: req.user.id } });
       if (!driver) return res.status(404).json({ success: false, message: 'Profil chauffeur introuvable' });
 
-      // Upload vers Supabase Storage (bucket privé)
-      // On stocke le chemin relatif en DB, pas l'URL publique
+      // ── P1.3 — Upload robuste ─────────────────────────────────────────────────
+      // Le fichier est en RAM (multer memoryStorage) — Render free tier redémarre
+      // fréquemment. Si le process crashe pendant l'upload, le fichier est perdu.
+      // On vérifie explicitement le retour de Supabase avant toute écriture en DB.
       const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
       const filename = `${driver.id}/${req.body.type}_${Date.now()}${ext}`;
-      const storagePath = await uploadToSupabase(req.file.buffer, req.file.mimetype, filename);
 
-      const doc = await prisma.driverDocument.upsert({
-        where: { driverId_type: { driverId: driver.id, type: req.body.type } },
-        update: { fileUrl: storagePath, status: 'pending', notes: null },
-        create: { driverId: driver.id, type: req.body.type, fileUrl: storagePath }
+      logger.info('[UPLOAD DOC] Début upload', {
+        driverId: driver.id, type: req.body.type, size: req.file.size, filename,
       });
 
+      const storagePath = await uploadToSupabase(req.file.buffer, req.file.mimetype, filename);
+
+      // Null = circuit breaker ouvert ou Supabase indisponible
+      if (!storagePath) {
+        logger.warn('[UPLOAD DOC] Supabase indisponible ou circuit ouvert', { driverId: driver.id });
+        return res.status(503).json({
+          success:   false,
+          message:   'Le service de stockage est temporairement indisponible. Veuillez réessayer dans quelques instants.',
+          code:      'STORAGE_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+
+      // Écriture DB uniquement si l'upload Supabase a réussi
+      const doc = await prisma.driverDocument.upsert({
+        where:  { driverId_type: { driverId: driver.id, type: req.body.type } },
+        update: { fileUrl: storagePath, status: 'pending', notes: null },
+        create: { driverId: driver.id, type: req.body.type, fileUrl: storagePath },
+      });
+
+      logger.info('[UPLOAD DOC] Succès', { driverId: driver.id, type: req.body.type, docId: doc.id });
       res.json({ success: true, document: doc });
     } catch (err) {
-      console.error('[UPLOAD DOC]', err);
-      res.status(500).json({ success: false, message: 'Erreur upload document' });
+      logger.error('[UPLOAD DOC] Erreur', { error: err.message, driverId: req.user?.id });
+      res.status(500).json({
+        success:   false,
+        message:   'Erreur lors de l\'upload. Le fichier n\'a pas été enregistré. Veuillez réessayer.',
+        retryable: true,
+      });
     }
   }
 );
@@ -180,16 +206,16 @@ router.put('/availability', authenticate, requireDriver,
         availability
       });
 
-      // Si le chauffeur passe EN LIGNE et a une position connue
+      // ── P1.1 — Dispatch unifié via offerRideToNextDriver ─────────────────────
+      // Avant : envoi direct des courses via socket → bypass du flow normal
+      // → un driver pouvait recevoir la même course deux fois.
+      // Maintenant : on passe uniquement par triggerOfferIfIdle qui vérifie s'il
+      // y a déjà un timer actif pour la ride avant de lancer une nouvelle offre.
+      // offerRideToNextDriver est l'unique source de vérité pour le dispatch.
       if (availability === 'online' && driver.current_lat && driver.current_lng) {
-        const pendingRides = await prisma.$queryRaw`
-          SELECT r.id, r.pickup_address, r.pickup_lat, r.pickup_lng,
-                 r.dropoff_address, r.dropoff_lat, r.dropoff_lng,
-                 r.estimated_price, r.distance_km, r.duration_minutes,
-                 r.payment_method, r.created_at,
-                 u.id as client_id, u.first_name, u.last_name, u.phone, u.avatar_url
+        const idleRides = await prisma.$queryRaw`
+          SELECT r.id
           FROM rides r
-          JOIN users u ON u.id = r.client_id
           WHERE r.status = 'searching'
             AND r.created_at > NOW() - INTERVAL '10 minutes'
             AND (
@@ -200,40 +226,17 @@ router.put('/availability', authenticate, requireDriver,
               )
             ) <= ${searchRadius}
           ORDER BY r.created_at DESC
-          LIMIT 3
+          LIMIT 5
         `;
 
-        if (io && pendingRides.length > 0) {
-          // Délai de 500ms pour laisser le temps à l'app de traiter la réponse HTTP
-          // et passer isOnline=true avant de recevoir l'événement socket
+        if (idleRides.length > 0) {
+          logger.info(`[AVAILABILITY] Driver ${driver.id} online → ${idleRides.length} ride(s) éligible(s) → triggerOfferIfIdle`);
+          // Petit délai pour laisser le JWT côté app se mettre à jour
           setTimeout(() => {
-          for (const ride of pendingRides) {
-            io.to(`user_${req.user.id}`).emit('new_ride_request', {
-              ride: {
-                id: ride.id,
-                pickupAddress: ride.pickup_address,
-                pickupLat: parseFloat(ride.pickup_lat),
-                pickupLng: parseFloat(ride.pickup_lng),
-                dropoffAddress: ride.dropoff_address,
-                dropoffLat: parseFloat(ride.dropoff_lat),
-                dropoffLng: parseFloat(ride.dropoff_lng),
-                estimatedPrice: parseFloat(ride.estimated_price),
-                distanceKm: parseFloat(ride.distance_km),
-                durationMinutes: ride.duration_minutes,
-                paymentMethod: ride.payment_method,
-                client: {
-                  id: ride.client_id,
-                  firstName: ride.first_name,
-                  lastName: ride.last_name,
-                  phone: ride.phone,
-                  avatarUrl: ride.avatar_url,
-                },
-                createdAt: ride.created_at,
-              }
-            });
-          }
-          console.log(`[AVAILABILITY] Chauffeur ${driver.id} en ligne → ${pendingRides.length} course(s) en attente envoyées`);
-          }, 500); // fin setTimeout
+            for (const ride of idleRides) {
+              triggerOfferIfIdle(ride.id, io).catch(() => {});
+            }
+          }, 500);
         }
       }
 

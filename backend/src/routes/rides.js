@@ -4,12 +4,14 @@ const prisma = require('../lib/prisma');
 const { authenticate, requireDriver } = require('../middleware/auth');
 const { rideLimiter, strictLimiter } = require('../middleware/rateLimit');
 const { validateUUID, clampInt } = require('../middleware/security');
-const { estimateRide, haversineDistance } = require('../services/pricing');
+const { estimateRide } = require('../services/pricing');
 const { autocomplete, getPlaceDetails, reverseGeocode } = require('../services/geocoding');
 const {
-  notifyRideRequest, notifyRideAccepted, notifyDriverArrived,
-  notifyRideStarted, notifyRideCompleted, notifyRideCancelled
-} = require('../services/notifications');
+  broadcastNewRide,
+  updateRideStatus,
+  handleRideAccepted,
+} = require('../services/rideManager');
+const rideSyncService = require('../services/rideSyncService');
 
 // ── POST /rides/estimate ─────────────────────────────────────
 router.post('/estimate', authenticate,
@@ -128,42 +130,11 @@ router.post('/', authenticate, rideLimiter,
         include: { client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } } }
       });
 
-      const nearbyDrivers = await prisma.$queryRaw`
-        SELECT d.id as driver_id, d.user_id FROM drivers d
-        WHERE d.status = 'approved' AND d.availability = 'online'
-          AND d.current_lat IS NOT NULL
-          AND (6371 * acos(
-            cos(radians(${pickupLat})) * cos(radians(d.current_lat)) *
-            cos(radians(d.current_lng) - radians(${pickupLng})) +
-            sin(radians(${pickupLat})) * sin(radians(d.current_lat))
-          )) <= LEAST(COALESCE(d.search_radius, 5), 20)
-      `;
-
+      // Diffusion initiale — rideManager gère la redistribution si refus
       const io = req.app.get('io');
-      const clientName = `${ride.client.firstName || 'Client'} ${ride.client.lastName || ''}`.trim();
-
-      for (const d of nearbyDrivers) {
-        if (io) {
-          io.sendToUser(d.user_id, 'new_ride_request', {
-            ride: {
-              id:             ride.id,
-              pickupAddress:  ride.pickupAddress,
-              pickupLat:      ride.pickupLat,
-              pickupLng:      ride.pickupLng,
-              dropoffAddress: ride.dropoffAddress,
-              dropoffLat:     ride.dropoffLat,
-              dropoffLng:     ride.dropoffLng,
-              estimatedPrice: ride.estimatedPrice,
-              distanceKm:     ride.distanceKm,
-              durationMinutes:ride.durationMinutes,
-              paymentMethod:  ride.paymentMethod,
-              client:         ride.client,
-              createdAt:      ride.createdAt,
-            }
-          });
-        }
-        notifyRideRequest(d.user_id, ride.id, clientName, ride.pickupAddress);
-      }
+      await broadcastNewRide(ride, io);
+      // Notifier le panel admin de la nouvelle course
+      rideSyncService.onRideCreated(ride, io);
 
       res.status(201).json({ success: true, ride });
     } catch (err) {
@@ -324,128 +295,56 @@ router.get('/:id', authenticate, ...validateUUID('id'), async (req, res) => {
 });
 
 // ── POST /rides/:id/accept (chauffeur) ───────────────────────
+// Délègue entièrement à handleRideAccepted (transaction atomique, matrice sync)
 router.post('/:id/accept', authenticate, requireDriver, ...validateUUID('id'), async (req, res) => {
   try {
-    const updatedRide = await prisma.$transaction(async (tx) => {
-      const current = await tx.ride.findUnique({ where: { id: req.params.id } });
-      if (!current || current.status !== 'searching') {
-        const err = new Error('Course non disponible');
-        err.code = 'RIDE_NOT_AVAILABLE';
-        throw err;
-      }
-      return tx.ride.update({
-        where: { id: req.params.id },
-        data: {
-          driverId:   req.user.driver.id,
-          status:     'accepted',
-          acceptedAt: new Date()
-        },
-        include: {
-          client: { select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true } },
-          driver: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } }
-        }
-      });
-    });
+    const io     = req.app.get('io');
+    const result = await handleRideAccepted(req.params.id, req.user.driver, io);
 
-    await prisma.driver.update({
-      where: { id: req.user.driver.id },
-      data: { availability: 'busy' }
-    });
-
-    const io = req.app.get('io');
-    if (io) io.to(`ride_${req.params.id}`).emit('ride_accepted', { ride: updatedRide });
-
-    notifyRideAccepted(
-      updatedRide.clientId,
-      updatedRide.id,
-      `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim()
-    );
-
-    res.json({ success: true, ride: updatedRide });
-  } catch (err) {
-    if (err.code === 'RIDE_NOT_AVAILABLE') {
+    if (!result.success) {
       return res.status(409).json({ success: false, message: 'Course non disponible' });
     }
+    res.json({ success: true, ride: result.ride });
+  } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 });
 
 // ── POST /rides/:id/status ───────────────────────────────────
+// Délègue entièrement à updateRideStatus (machine à états stricte + matrice sync)
 router.post('/:id/status', authenticate, ...validateUUID('id'), async (req, res) => {
   try {
-    const { status } = req.body;
-    const ride = await prisma.ride.findUnique({
+    const { status, reason } = req.body;
+
+    if (!status) return res.status(400).json({ success: false, message: 'Statut requis' });
+
+    // Vérifier que l'utilisateur est participant de la course (sécurité de base)
+    const rideCheck = await prisma.ride.findUnique({
       where: { id: req.params.id },
-      include: { driver: true }
+      select: { clientId: true, driver: { select: { userId: true } } },
     });
 
-    if (!ride) return res.status(404).json({ success: false, message: 'Course introuvable' });
+    if (!rideCheck) return res.status(404).json({ success: false, message: 'Course introuvable' });
 
-    const isDriver = ride.driver?.userId === req.user.id;
-    const isClient = ride.clientId === req.user.id;
+    const isClient = rideCheck.clientId === req.user.id;
+    const isDriver = rideCheck.driver?.userId === req.user.id;
+    const isAdmin  = req.user.role === 'admin';
 
-    const validTransitions = {
-      driver_en_route: { from: ['accepted'],       by: 'driver' },
-      arrived:         { from: ['driver_en_route'], by: 'driver' },
-      in_progress:     { from: ['arrived'],         by: 'driver' },
-      completed:       { from: ['in_progress'],     by: 'driver' },
-      cancelled:       { from: ['searching', 'accepted', 'driver_en_route', 'arrived'], by: 'any' }
-    };
-
-    const transition = validTransitions[status];
-    if (!transition) return res.status(400).json({ success: false, message: 'Statut invalide' });
-    if (!transition.from.includes(ride.status)) {
-      return res.status(409).json({ success: false, message: `Transition ${ride.status} → ${status} invalide` });
-    }
-    if (transition.by === 'driver' && !isDriver) {
-      return res.status(403).json({ success: false, message: 'Action réservée au chauffeur' });
-    }
-    // Pour 'cancelled', vérifier que l'appelant est bien un participant
-    if (status === 'cancelled' && !isDriver && !isClient) {
+    if (!isClient && !isDriver && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Accès refusé' });
     }
 
-    const updateData = { status };
-    const timestamps = {
-      driver_en_route: {},
-      arrived:         {},
-      in_progress:     { pickedUpAt: new Date() },
-      completed:       { completedAt: new Date(), finalPrice: ride.estimatedPrice },
-      cancelled:       { cancelledAt: new Date(), cancelledBy: req.user.id, cancelReason: req.body.reason }
-    };
-    Object.assign(updateData, timestamps[status]);
+    const io     = req.app.get('io');
+    const result = await updateRideStatus(req.params.id, status, req.user, reason, io);
 
-    const updatedRide = await prisma.ride.update({
-      where: { id: req.params.id },
-      data: updateData
-    });
-
-    if (['completed', 'cancelled'].includes(status) && ride.driver) {
-      const driverUpdate = { availability: 'online' };
-
-      if (status === 'completed') {
-        const price    = parseFloat(updatedRide.finalPrice || ride.estimatedPrice || 0);
-        const earnings = price * (1 - (parseFloat(process.env.PLATFORM_COMMISSION) || 0.20));
-        driverUpdate.totalRides    = { increment: 1 };
-        driverUpdate.totalEarnings = { increment: Math.round(earnings * 100) / 100 };
-      }
-
-      await prisma.driver.update({ where: { id: ride.driver.id }, data: driverUpdate });
+    if (!result.success) {
+      if (result.code === 'NOT_FOUND')          return res.status(404).json({ success: false, message: 'Course introuvable' });
+      if (result.code === 'INVALID_TRANSITION') return res.status(409).json({ success: false, message: result.message });
+      return res.status(400).json({ success: false, message: result.message || 'Erreur' });
     }
 
-    const io = req.app.get('io');
-    if (io) io.to(`ride_${req.params.id}`).emit('ride_status_changed', { rideId: req.params.id, status });
-
-    if (status === 'arrived')    notifyDriverArrived(ride.clientId, ride.id);
-    if (status === 'in_progress') notifyRideStarted(ride.clientId, ride.id);
-    if (status === 'completed')   notifyRideCompleted(ride.clientId, ride.id, updatedRide.finalPrice);
-    if (status === 'cancelled') {
-      const notify = isDriver ? ride.clientId : ride.driver?.userId;
-      if (notify) notifyRideCancelled(notify, ride.id, isDriver);
-    }
-
-    res.json({ success: true, ride: updatedRide });
+    res.json({ success: true, ride: result.ride });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
@@ -533,20 +432,24 @@ router.post('/:id/sos', authenticate, ...validateUUID('id'), async (req, res) =>
       return res.status(403).json({ success: false, message: 'Accès refusé' });
     }
 
-    await prisma.ride.update({
-      where: { id: req.params.id },
-      data: { isSos: true }
-    });
+    // Mise à jour atomique ride + création de l'alerte SOS en DB
+    await prisma.$transaction([
+      prisma.ride.update({
+        where: { id: req.params.id },
+        data:  { isSos: true },
+      }),
+      prisma.sosAlert.create({
+        data: {
+          userId: req.user.id,
+          rideId: req.params.id,
+          lat:    req.body.lat   ? parseFloat(req.body.lat)  : null,
+          lng:    req.body.lng   ? parseFloat(req.body.lng)  : null,
+        },
+      }),
+    ]);
 
     const io = req.app.get('io');
-    if (io) {
-      io.to('admin_room').emit('sos_alert', {
-        rideId:    req.params.id,
-        userId:    req.user.id,
-        userRole:  req.user.role,
-        timestamp: Date.now()
-      });
-    }
+    rideSyncService.onSosAlert(req.params.id, req.user.id, req.user.role, io);
 
     res.json({ success: true, message: 'SOS envoyé' });
   } catch (err) {

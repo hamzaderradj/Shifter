@@ -131,6 +131,20 @@ class CircuitBreaker {
   }
 }
 
+// ── Décision : état des circuit breakers NON persisté (P2.3) ─────────────────
+// Les breakers se réinitialisent à CLOSED à chaque restart.
+// Ce choix est intentionnel pour les raisons suivantes :
+//   1. Pire cas : 3-5 requêtes échouées avant que le circuit se rouvre.
+//      Coût : < 1 seconde de latence pour les 3-5 premiers appels post-restart.
+//   2. Les restarts Render arrivent rarement PENDANT une panne de service externe.
+//      Les pannes Google Maps / Expo / Supabase durent des minutes à des heures —
+//      le circuit se fermera de nouveau après les 3 premiers échecs (< 30s).
+//   3. Persister l'état OPEN bloquerait des services qui pourraient s'être rétablis
+//      pendant le restart, dégradant inutilement la disponibilité.
+//   4. La complexité de la synchronisation DB/mémoire ne vaut pas ce gain marginal.
+// Conclusion : reset à CLOSED au restart = comportement conservateur et correct.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Instances ─────────────────────────────────────────────────
 const breakers = {
   googleMaps: new CircuitBreaker('GoogleMaps', { failureThreshold: 3, recoveryTimeout: 60_000  }),

@@ -13,6 +13,7 @@
 const cron   = require('node-cron');
 const prisma = require('../lib/prisma');
 const logger = require('../services/logger');
+const { runBackup } = require('../scripts/backup');
 
 // ── Nettoyage OTP expirés — toutes les heures ─────────────────
 cron.schedule('0 * * * *', async () => {
@@ -209,4 +210,22 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-logger.info('[CRON] Jobs planifiés: OTP, refresh tokens, timeout+notif courses, intégrité états, notifications, rapport');
+// ── Backup quotidien — tous les jours à 2h UTC ───────────────
+cron.schedule('0 2 * * *', async () => {
+  await runBackup().catch((err) => logger.error('[CRON] Backup échoué', { error: err.message }));
+});
+
+// ── Nettoyage security_events > 90 jours — une fois par semaine ──
+cron.schedule('0 3 * * 0', async () => {
+  try {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const result = await prisma.$executeRaw`
+      DELETE FROM security_events WHERE created_at < ${cutoff}
+    `;
+    logger.info('[CRON] security_events nettoyés (> 90j)');
+  } catch (err) {
+    logger.error('[CRON] Nettoyage security_events échoué', { error: err.message });
+  }
+});
+
+logger.info('[CRON] Jobs planifiés: OTP, refresh tokens, timeout+notif courses, intégrité états, notifications, backup, security_events, rapport');

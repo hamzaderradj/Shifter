@@ -1,16 +1,19 @@
 /**
- * TERMINATOR — Orchestrateur central
- *
- * Initialise et coordonne toutes les couches de défense.
- * Point d'entrée unique : require('./middleware/terminator')
+ * TERMINATOR V3 — Orchestrateur central
  *
  * Architecture défense en profondeur :
  *
- *   RÉSEAU     → Cloudflare (WAF, DDoS, Bot) — externe
- *   T1         → IP Firewall & Auto-ban
- *   T2         → Anomaly Detection
- *   T3         → Circuit Breakers (services externes)
- *   T4         → Preflight (vérification config prod)
+ *   RÉSEAU     → Cloudflare Workers (HTTP proxy, headers sécurité)
+ *   T1         → IP Firewall & Auto-ban (persisté en DB)
+ *   T2         → Anomaly Detection (injection, scan de routes)
+ *   T3-CB      → Circuit Breakers (Google Maps, Expo, Firebase, Supabase)
+ *   T3-FP      → Device Fingerprint (50 comptes/appareil → HARD_BAN)
+ *   T4         → Preflight (vérification config production)
+ *   T5         → Adaptive Defense Engine (comportements anormaux)
+ *   HONEYPOT   → Routes pièges (SOFT_BAN immédiat)
+ *   T7         → Rate Limiting composite (IP + userId + fingerprint + route)
+ *   T8         → Re-auth admin pour actions critiques
+ *   T9         → Security Events (journal immuable PostgreSQL)
  *   RATE LIMIT → Rate limiting par route (express-rate-limit)
  *   AUTH       → JWT + rotation + révocation
  *   AUTHZ      → RBAC + UUID validation + ownership
@@ -22,15 +25,22 @@ const { ipFirewallMiddleware, listBannedIps, unbanIp, recordIncident } = require
 const { anomalyDetector, recordAuthFailure }                            = require('./anomaly');
 const { getAllBreakersStatus }                                           = require('./circuitBreaker');
 const { runPreflight, getSecurityStatus }                               = require('./preflight');
-const logger                                                            = require('../../services/logger');
+const { deviceFingerprintMiddleware, loadBannedFingerprints }           = require('./deviceFingerprint');
+const { adaptiveDefenseMiddleware,
+        trackAccountCreation, trackOtpRequest,
+        trackRideCreation, checkImpossibleGeolocation }                 = require('./adaptiveDefense');
+const { honeypotMiddleware }                                             = require('./honeypot');
+const { securityLoggerMiddleware, logSecurityEvent }                     = require('./securityLogger');
+const logger                                                             = require('../../services/logger');
 
 /**
- * Initialise TERMINATOR — à appeler une seule fois au démarrage.
- * Lance le preflight et démarre les cron jobs de nettoyage.
+ * Initialise TERMINATOR V3.
  */
 const init = () => {
-  // Lancer le preflight de sécurité
   const report = runPreflight();
+
+  // Charger les fingerprints bannis
+  loadBannedFingerprints().catch(() => {});
 
   // Démarrer les cron jobs
   try {
@@ -40,36 +50,56 @@ const init = () => {
     logger.warn('[TERMINATOR] Cron jobs non disponibles', { error: err.message });
   }
 
-  logger.info('[TERMINATOR] Système de sécurité initialisé', {
-    env:       report.env,
-    passed:    report.passed.length,
-    warnings:  report.warnings.length,
-    blockers:  report.blockers.length,
-    readyForProduction: report.readyForProduction,
+  logger.info('[TERMINATOR V3] Système de sécurité initialisé', {
+    env:      report.env,
+    passed:   report.passed.length,
+    warnings: report.warnings.length,
+    blockers: report.blockers.length,
+    layers:   ['T1-Firewall','T2-Anomaly','T3-CircuitBreaker','T3-Fingerprint','T4-Preflight','T5-Adaptive','Honeypot','T9-ImmutableLog'],
   });
 
   return report;
 };
 
 /**
- * Stack de middlewares TERMINATOR à appliquer sur toutes les routes.
- * Usage : app.use(terminator.middlewareStack)
+ * Stack principal — ordre critique.
+ *
+ * 1. Honeypots en premier : répondent avant toute autre logique
+ * 2. Security logger : injecte req.logSecurityEvent
+ * 3. Device fingerprint : injecte req.fingerprintId
+ * 4. IP Firewall T1 : bloque les IPs bannies
+ * 5. T5 Adaptive Defense : scan + scraping
+ * 6. T2 Anomaly : injection + volume
  */
 const middlewareStack = [
-  ipFirewallMiddleware,   // T1 : bloque les IPs bannies immédiatement
-  anomalyDetector,        // T2 : détecte les comportements suspects
+  honeypotMiddleware,             // HONEYPOT : avant tout le reste
+  securityLoggerMiddleware,       // T9 : injecte req.logSecurityEvent
+  deviceFingerprintMiddleware,    // T3-FP : injecte req.fingerprintId
+  ipFirewallMiddleware,           // T1 : bloque les IPs/devices bannis
+  adaptiveDefenseMiddleware,      // T5 : scan + scraping
+  anomalyDetector,                // T2 : injection SQL/XSS + volume
 ];
 
 /**
- * Statut complet du système TERMINATOR.
- * Exposé via GET /api/admin/terminator/status (admin only).
+ * Statut complet exposé via GET /admin/terminator/status.
  */
 const getFullStatus = () => ({
-  timestamp:      new Date().toISOString(),
-  security:       getSecurityStatus(),
+  timestamp:       new Date().toISOString(),
+  version:         'V3',
+  security:        getSecurityStatus(),
   circuitBreakers: getAllBreakersStatus(),
-  bannedIps:      listBannedIps(),
-  uptime:         process.uptime(),
+  bannedIps:       listBannedIps(),
+  uptime:          process.uptime(),
+  layers: {
+    T1_firewall:    'active',
+    T2_anomaly:     'active',
+    T3_breakers:    'active',
+    T3_fingerprint: 'active',
+    T4_preflight:   'active',
+    T5_adaptive:    'active',
+    honeypot:       'active',
+    T9_auditLog:    'active',
+  },
 });
 
 module.exports = {
@@ -77,9 +107,14 @@ module.exports = {
   middlewareStack,
   getFullStatus,
 
-  // Exports utilitaires pour usage dans les routes
+  // Exports pour usage dans les routes
   recordIncident,
   recordAuthFailure,
   listBannedIps,
   unbanIp,
+  logSecurityEvent,
+  trackAccountCreation,
+  trackOtpRequest,
+  trackRideCreation,
+  checkImpossibleGeolocation,
 };

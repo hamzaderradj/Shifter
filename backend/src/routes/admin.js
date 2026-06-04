@@ -7,6 +7,7 @@ const { notifyAccountApproved, notifyAccountRejected, sendPushNotification } = r
 const terminator = require('../middleware/terminator');
 const { cancelRide, offerRideToNextDriver, triggerOfferIfIdle } = require('../services/rideManager');
 const { reconcile } = require('../services/reconciliation');
+const { requireRecentAuth } = require('../middleware/requireRecentAuth');
 
 const adminOnly = [authenticate, requireRole('admin')];
 // Shortcut: adminOnly + UUID validation sur le param :id
@@ -115,7 +116,7 @@ router.put('/drivers/:id/reject', ...adminId, requireAdminRole('operations'), au
 });
 
 // ── PUT /admin/drivers/:id/suspend ──────────────────────────
-router.put('/drivers/:id/suspend', ...adminId, requireAdminRole('operations'), auditLog('suspend_driver'), async (req, res) => {
+router.put('/drivers/:id/suspend', ...adminId, requireAdminRole('operations'), requireRecentAuth(30), auditLog('suspend_driver'), async (req, res) => {
   try {
     const driver = await prisma.driver.update({
       where: { id: req.params.id },
@@ -664,7 +665,7 @@ router.get('/metrics', ...adminOnly, async (req, res) => {
 // ── PUT /admin/rides/:id/force-cancel — forcer l'annulation ──────────
 // CORRECTION P0 : utilise cancelRide() qui passe par rideSyncService
 // → push client + driver, socket ride room + admin_room, libère le chauffeur
-router.put('/rides/:id/force-cancel', ...adminId, requireAdminRole('operations'), auditLog('force_cancel_ride'), async (req, res) => {
+router.put('/rides/:id/force-cancel', ...adminId, requireAdminRole('operations'), requireRecentAuth(30), auditLog('force_cancel_ride'), async (req, res) => {
   try {
     const { reason = "Annulée par l'administration" } = req.body;
 
@@ -817,9 +818,65 @@ router.delete('/terminator/ban/:ip', ...adminOnly, requireAdminRole('superadmin'
   }
 );
 
+// ── GET /admin/security-events — journal immuable T9 ─────────
+router.get('/security-events', ...adminOnly, requireAdminRole('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, action, ip, userId, minRisk = 0 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const limitN   = Math.min(parseInt(limit) || 50, 200);
+    const minScore = parseInt(minRisk) || 0;
+
+    const events = await prisma.$queryRaw`
+      SELECT id, created_at, ip, fingerprint_id, user_id, action, risk_score, details
+      FROM security_events
+      WHERE risk_score >= ${minScore}
+        AND (${action || null}::TEXT IS NULL OR action = ${action || ''})
+        AND (${ip     || null}::TEXT IS NULL OR ip     = ${ip     || ''})
+        AND (${userId || null}::TEXT IS NULL OR user_id = ${userId || ''})
+      ORDER BY created_at DESC
+      LIMIT ${limitN} OFFSET ${offset}
+    `;
+
+    const [{ count }] = await prisma.$queryRaw`
+      SELECT COUNT(*) FROM security_events
+      WHERE risk_score >= ${minScore}
+    `;
+
+    // Résumé par action
+    const summary = await prisma.$queryRaw`
+      SELECT action, COUNT(*) as count, MAX(risk_score) as max_risk
+      FROM security_events
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      GROUP BY action ORDER BY count DESC LIMIT 20
+    `;
+
+    res.json({ success: true, events, total: parseInt(count), summary,
+      pagination: { page: parseInt(page), limit: limitN, total: parseInt(count) } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /admin/device-fingerprints — appareils suspects ───────
+router.get('/device-fingerprints', ...adminOnly, requireAdminRole('admin'), async (req, res) => {
+  try {
+    const suspicious = await prisma.$queryRaw`
+      SELECT fingerprint_id, user_ids, device_info, first_seen, last_seen,
+             account_count, is_banned, ban_reason
+      FROM device_fingerprints
+      WHERE account_count >= 3 OR is_banned = true
+      ORDER BY account_count DESC, last_seen DESC
+      LIMIT 100
+    `;
+    res.json({ success: true, fingerprints: suspicious });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── POST /admin/terminator/ban — bannir manuellement une IP ───
 router.post('/terminator/ban', ...adminOnly, requireAdminRole('superadmin'),
-  auditLog('manual_ban_ip'),
+  requireRecentAuth(15), auditLog('manual_ban_ip'),
   (req, res) => {
     const { ip, reason = 'manual_ban' } = req.body;
     if (!ip) return res.status(400).json({ success: false, message: 'IP requise' });

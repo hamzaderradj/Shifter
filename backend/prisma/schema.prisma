@@ -87,6 +87,8 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
   lastLoginAt   DateTime? @map("last_login_at")
 
+  fingerprintId   String?         @map("fingerprint_id")
+
   driver          Driver?
   clientRides     Ride[]          @relation("ClientRides")
   ratingGiven     Rating[]        @relation("RatingFrom")

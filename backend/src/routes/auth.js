@@ -7,8 +7,10 @@ const { authenticate } = require('../middleware/auth');
 const { otpLimiter, adminLoginLimiter, strictLimiter } = require('../middleware/rateLimit');
 const { timingSafeCompare } = require('../middleware/security');
 const firebaseAdmin = require('../services/firebase');
-const { recordAuthFailure } = require('../middleware/terminator/anomaly');
-const { withFirebase } = require('../middleware/terminator/circuitBreaker');
+const { recordAuthFailure }   = require('../middleware/terminator/anomaly');
+const { withFirebase }        = require('../middleware/terminator/circuitBreaker');
+const { trackOtpRequest, trackAccountCreation } = require('../middleware/terminator/adaptiveDefense');
+const { trackFingerprint }    = require('../middleware/terminator/deviceFingerprint');
 
 // ── Normalisation numéro de téléphone ──────────────────────────
 function normalizePhone(phone) {
@@ -56,6 +58,13 @@ router.post(
 
     try {
       const phone = normalizePhone(req.body.phone);
+
+      // T5 : détecter le flooding OTP
+      const allowed = trackOtpRequest(req.ip, req.fingerprintId, phone);
+      if (!allowed) {
+        return res.status(429).json({ success: false, message: 'Trop de demandes OTP. Veuillez patienter.' });
+      }
+
       const result = await sendOtp(phone);
       res.json({ success: true, message: 'Code OTP envoyé', expiresAt: result.expiresAt });
     } catch (err) {
@@ -137,6 +146,12 @@ router.post(
           user: { select: { firstName: true, lastName: true, phone: true, avatarUrl: true } }
         }
       });
+
+      // T5 : détecter la création de comptes en masse par IP/device
+      if (isNewUser) trackAccountCreation(req.ip, req.fingerprintId);
+
+      // T3-FP : associer le fingerprint à ce userId
+      trackFingerprint(req.fingerprintId, user.id, req);
 
       res.json({
         success: true,

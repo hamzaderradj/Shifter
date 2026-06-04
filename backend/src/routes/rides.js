@@ -12,6 +12,7 @@ const {
   handleRideAccepted,
 } = require('../services/rideManager');
 const rideSyncService = require('../services/rideSyncService');
+const { trackRideCreation } = require('../middleware/terminator/adaptiveDefense');
 
 // ── POST /rides/estimate ─────────────────────────────────────
 router.post('/estimate', authenticate,
@@ -107,6 +108,12 @@ router.post('/', authenticate, rideLimiter,
 
       if (activeRide) {
         return res.status(409).json({ success: false, message: 'Course déjà en cours', rideId: activeRide.id });
+      }
+
+      // T5 : détecter la création abusive de courses
+      const rideAllowed = trackRideCreation(req.user.id, req.ip);
+      if (!rideAllowed) {
+        return res.status(429).json({ success: false, message: 'Trop de courses créées. Compte temporairement restreint.' });
       }
 
       const estimate = await estimateRide(pickupLat, pickupLng, dropoffLat, dropoffLng);
